@@ -83,8 +83,9 @@ class SearchMixin(MixinProtocol):
               {
                 "category": "Albums",
                 "resultType": "album",
-                "browseId": "MPREb_9nqEki4ZDpp",
-                "title": "(What's The Story) Morning Glory? (Remastered)",
+                "browseId": "MPREb_IInSY5QXXrW",
+                "playlistId": "OLAK5uy_kunInnOpcKECWIBQGB0Qj6ZjquxDvfckg",
+                "title": "(What's The Story) Morning Glory?",
                 "type": "Album",
                 "artist": "Oasis",
                 "year": "1995",
@@ -192,10 +193,10 @@ class SearchMixin(MixinProtocol):
         else:
             results = response["contents"]
 
-        results = nav(results, SECTION_LIST)
+        section_list = nav(results, SECTION_LIST)
 
         # no results
-        if len(results) == 1 and "itemSectionRenderer" in results:
+        if len(section_list) == 1 and "itemSectionRenderer" in section_list:
             return search_results
 
         # set filter for parser
@@ -204,35 +205,37 @@ class SearchMixin(MixinProtocol):
         elif scope == scopes[1]:
             filter = scopes[1]
 
-        for res in results:
+        for res in section_list:
+            result_type = category = None
+            search_result_types = self.parser.get_search_result_types()
+
             if "musicCardShelfRenderer" in res:
                 top_result = parse_top_result(
                     res["musicCardShelfRenderer"], self.parser.get_search_result_types()
                 )
                 search_results.append(top_result)
-                if results := nav(res, ["musicCardShelfRenderer", "contents"], True):
-                    category = None
-                    # category "more from youtube" is missing sometimes
-                    if "messageRenderer" in results[0]:
-                        category = nav(results.pop(0), ["messageRenderer", *TEXT_RUN_TEXT])
-                    type = None
-                else:
+                if not (shelf_contents := nav(res, ["musicCardShelfRenderer", "contents"], True)):
                     continue
+                # if "more from youtube" is present, remove it - it's not parseable
+                if "messageRenderer" in shelf_contents[0]:
+                    category = nav(shelf_contents.pop(0), ["messageRenderer", *TEXT_RUN_TEXT])
 
             elif "musicShelfRenderer" in res:
-                results = res["musicShelfRenderer"]["contents"]
-                type_filter = filter
+                shelf_contents = res["musicShelfRenderer"]["contents"]
                 category = nav(res, MUSIC_SHELF + TITLE_TEXT, True)
-                if not type_filter and scope == scopes[0]:
-                    type_filter = category
 
-                type = type_filter[:-1].lower() if type_filter else None
+                # if we know the filter it's easy to set the result type
+                # unfortunately uploads is modeled as a filter (historical reasons),
+                #  so we take care to not set the result type for that scope
+                if filter and not scope == scopes[1]:
+                    result_type = filter[:-1].lower()
 
             else:
                 continue
 
-            search_result_types = self.parser.get_search_result_types()
-            search_results.extend(parse_search_results(results, search_result_types, type, category))
+            search_results.extend(
+                parse_search_results(shelf_contents, search_result_types, result_type, category)
+            )
 
             if filter:  # if filter is set, there are continuations
 
@@ -240,7 +243,7 @@ class SearchMixin(MixinProtocol):
                     return await self._send_request(endpoint, body, additionalParams)
 
                 def parse_func(contents):
-                    return parse_search_results(contents, search_result_types, type, category)
+                    return parse_search_results(contents, search_result_types, result_type, category)
 
                 search_results.extend(
                     await get_continuations(

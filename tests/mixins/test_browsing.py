@@ -1,4 +1,7 @@
+import json
 import warnings
+from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -22,6 +25,14 @@ class TestBrowsing:
 
         results = yt.get_artist("UCLZ7tlKC06ResyDmEStSrOw")  # no album year
         assert len(results) >= 11
+
+    def test_get_artist_shows(self, yt_oauth):
+        # with audiobooks - only with authentication
+        results = yt_oauth.get_artist("UCyiY-0Af0O6emoI3YvCEDaA")
+        assert len(results["shows"]["results"]) == 10
+
+        results = yt_oauth.get_artist_albums(results["shows"]["browseId"], results["shows"]["params"])
+        assert len(results) == 100
 
     def test_get_artist_albums(self, yt):
         artist = yt.get_artist("UCAeLFBCQS7FvI8PvBrWvSBg")
@@ -65,6 +76,15 @@ class TestBrowsing:
     def test_get_album_browse_id_issue_470(self, yt):
         escaped_browse_id = yt.get_album_browse_id("OLAK5uy_nbMYyrfeg5ZgknoOsOGBL268hGxtcbnDM")
         assert escaped_browse_id == "MPREb_scJdtUCpPE2"
+
+    def test_get_album_2024(self, yt):
+        with open(Path(__file__).parent.parent / "data" / "2024_03_get_album.json", encoding="utf8") as f:
+            mock_response = json.load(f)
+        with mock.patch("ytmusicapi.YTMusic._send_request", return_value=mock_response):
+            album = yt.get_album("MPREabc")
+            assert len(album["tracks"]) == 19
+            assert len(album["artists"]) == 1
+            assert len(album) == 13
 
     def test_get_album(self, yt, yt_auth, sample_album):
         album = yt_auth.get_album(sample_album)

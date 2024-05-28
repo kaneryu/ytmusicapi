@@ -10,7 +10,7 @@ from ._utils import *
 
 
 class LibraryMixin(MixinProtocol):
-    async def get_library_playlists(self, limit: int = 25) -> List[Dict]:
+    async def get_library_playlists(self, limit: Optional[int] = 25) -> List[Dict]:
         """
         Retrieves the playlists in the user's library.
 
@@ -442,7 +442,7 @@ class LibraryMixin(MixinProtocol):
         ACCOUNT_PHOTO_URL = [*ACCOUNT_INFO, "accountPhoto", "thumbnails", 0, "url"]
 
         account_name = nav(response, ACCOUNT_NAME)
-        channel_handle = nav(response, ACCOUNT_CHANNEL_HANDLE)
+        channel_handle = nav(response, ACCOUNT_CHANNEL_HANDLE, none_if_absent=True)
         account_photo_url = nav(response, ACCOUNT_PHOTO_URL)
 
         return {
