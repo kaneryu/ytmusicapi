@@ -37,6 +37,7 @@ from ytmusicapi.parsers.i18n import Parser
 from .auth.oauth import OAuthCredentials, OAuthToken, RefreshingToken
 from .auth.oauth.token import Token
 from .auth.types import AuthType
+from .exceptions import YTMusicServerError, YTMusicUserError
 
 
 class YTMusicBase:
@@ -147,11 +148,11 @@ class YTMusicBase:
 
         if location:
             if location not in SUPPORTED_LOCATIONS:
-                raise Exception("Location not supported. Check the FAQ for supported locations.")
+                raise YTMusicUserError("Location not supported. Check the FAQ for supported locations.")
             self.context["context"]["client"]["gl"] = location
 
         if language not in SUPPORTED_LANGUAGES:
-            raise Exception(
+            raise YTMusicUserError(
                 "Language not supported. Supported languages are " + (", ".join(SUPPORTED_LANGUAGES)) + "."
             )
         self.context["context"]["client"]["hl"] = language
@@ -185,7 +186,7 @@ class YTMusicBase:
                 self.sapisid = sapisid_from_cookie(cookie)
                 self.origin = self.base_headers.get("origin", self.base_headers.get("x-origin"))
             except KeyError:
-                raise Exception("Your cookie is missing the required value __Secure-3PAPISID")
+                raise YTMusicUserError("Your cookie is missing the required value __Secure-3PAPISID")
 
     @property
     def base_headers(self):
@@ -240,7 +241,7 @@ class YTMusicBase:
         if response.status >= 400:
             message = "Server returned HTTP " + str(response.status) + ": " + response.reason + ".\n"
             error = response_text.get("error", {}).get("message")
-            raise Exception(message + error)
+            raise YTMusicServerError(message + error)
         return response_text
 
     async def _send_get_request(self, url: str, params: Optional[dict] = None) -> ClientResponse:
@@ -256,7 +257,7 @@ class YTMusicBase:
 
     def _check_auth(self):
         if not self.auth:
-            raise Exception("Please provide authentication before using this function")
+            raise YTMusicUserError("Please provide authentication before using this function")
 
     def __enter__(self):
         return self
