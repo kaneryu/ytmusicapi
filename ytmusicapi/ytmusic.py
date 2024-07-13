@@ -5,7 +5,7 @@ import os
 import time
 from contextlib import suppress
 from functools import partial
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from aiohttp import ClientSession, ClientResponse
 import aiohttp
@@ -42,10 +42,10 @@ from .auth.types import AuthType
 class YTMusicBase:
     def __init__(
         self,
-        auth: Optional[Union[str, Dict]] = None,
+        auth: Optional[Union[str, dict]] = None,
         user: Optional[str] = None,
         requests_session=True,
-        proxies: Optional[Dict[str, str]] = None,
+        proxies: Optional[dict[str, str]] = None,
         language: str = "en",
         location: str = "",
         oauth_credentials: Optional[OAuthCredentials] = None,
@@ -102,7 +102,7 @@ class YTMusicBase:
         self.oauth_credentials: OAuthCredentials  #: Client used for OAuth refreshing
 
         self._session: ClientSession  #: request session for connection pooling
-        self.proxies: Optional[Dict[str, str]] = proxies  #: params for session modification
+        self.proxies: Optional[dict[str, str]] = proxies  #: params for session modification
 
         if isinstance(requests_session, ClientSession):
             self._session = requests_session
@@ -222,7 +222,7 @@ class YTMusicBase:
 
         return self._headers
 
-    async def _send_request(self, endpoint: str, body: Dict, additionalParams: str = "") -> Dict:
+    async def _send_request(self, endpoint: str, body: dict, additionalParams: str = "") -> dict:
         body.update(self.context)
 
         # only required for post requests (?)
@@ -243,7 +243,7 @@ class YTMusicBase:
             raise Exception(message + error)
         return response_text
 
-    async def _send_get_request(self, url: str, params: Optional[Dict] = None) -> ClientResponse:
+    async def _send_get_request(self, url: str, params: Optional[dict] = None) -> ClientResponse:
         response = await self._session.get(
             url,
             params=params,

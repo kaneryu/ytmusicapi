@@ -1,6 +1,6 @@
 import ntpath
 import os
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from aiohttp import ClientSession, ClientResponse
 
@@ -17,12 +17,13 @@ from ytmusicapi.parsers.library import (
 from ytmusicapi.parsers.uploads import parse_uploaded_items
 
 from ..auth.types import AuthType
+from ..enums import ResponseStatus
 from ._protocol import MixinProtocol
 from ._utils import prepare_order_params, validate_order_parameter
 
 
 class UploadsMixin(MixinProtocol):
-    async def get_library_upload_songs(self, limit: Optional[int] = 25, order: Optional[str] = None) -> List[Dict]:
+    async def get_library_upload_songs(self, limit: Optional[int] = 25, order: Optional[str] = None) -> list[dict]:
         """
         Returns a list of uploaded songs
 
@@ -69,7 +70,7 @@ class UploadsMixin(MixinProtocol):
 
         return songs
 
-    async def get_library_upload_albums(self, limit: Optional[int] = 25, order: Optional[str] = None) -> List[Dict]:
+    async def get_library_upload_albums(self, limit: Optional[int] = 25, order: Optional[str] = None) -> list[dict]:
         """
         Gets the albums of uploaded songs in the user's library.
 
@@ -90,7 +91,7 @@ class UploadsMixin(MixinProtocol):
 
     async def get_library_upload_artists(
         self, limit: Optional[int] = 25, order: Optional[str] = None
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Gets the artists of uploaded songs in the user's library.
 
@@ -109,7 +110,7 @@ class UploadsMixin(MixinProtocol):
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    async def get_library_upload_artist(self, browseId: str, limit: int = 25) -> List[Dict]:
+    async def get_library_upload_artist(self, browseId: str, limit: int = 25) -> list[dict]:
         """
         Returns a list of uploaded tracks for the artist.
 
@@ -158,7 +159,7 @@ class UploadsMixin(MixinProtocol):
 
         return items
 
-    async def get_library_upload_album(self, browseId: str) -> Dict:
+    async def get_library_upload_album(self, browseId: str) -> dict:
         """
         Get information and tracks of an album associated with uploaded tracks
 
@@ -200,7 +201,7 @@ class UploadsMixin(MixinProtocol):
         album["duration_seconds"] = sum_total_duration(album)
         return album
 
-    async def upload_song(self, filepath: str) -> Union[str, ClientResponse]:
+    async def upload_song(self, filepath: str) -> Union[ResponseStatus, ClientResponse]:
         """
         Uploads a song to YouTube Music
 
@@ -238,11 +239,11 @@ class UploadsMixin(MixinProtocol):
                 response = await session.post(upload_url, data=file, headers=headers) #, proxies=self.proxies)
 
         if response.status == 200:
-            return "STATUS_SUCCEEDED"
+            return ResponseStatus.SUCCEEDED
         else:
             return response
 
-    async def delete_upload_entity(self, entityId: str) -> Union[str, Dict]:  # pragma: no cover
+    async def delete_upload_entity(self, entityId: str) -> Union[str, dict]:  # pragma: no cover
         """
         Deletes a previously uploaded song or album
 
@@ -259,6 +260,6 @@ class UploadsMixin(MixinProtocol):
         response = await self._send_request(endpoint, body)
 
         if "error" not in response:
-            return "STATUS_SUCCEEDED"
+            return ResponseStatus.SUCCEEDED
         else:
             return response["error"]

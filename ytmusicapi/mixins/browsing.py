@@ -1,6 +1,6 @@
 import re
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ytmusicapi.continuations import (
     get_continuations,
@@ -18,7 +18,7 @@ from ._utils import get_datestamp
 
 
 class BrowsingMixin(MixinProtocol):
-    async def get_home(self, limit=3) -> List[Dict]:
+    async def get_home(self, limit=3) -> list[dict]:
         """
         Get the home page.
         The home page is structured as titled rows, returning 3 rows of music suggestions at a time.
@@ -124,7 +124,7 @@ class BrowsingMixin(MixinProtocol):
 
         return home
 
-    async def get_artist(self, channelId: str) -> Dict:
+    async def get_artist(self, channelId: str) -> dict:
         """
         Get information about an artist and their top releases (songs,
         albums, singles, videos, and related artists). The top lists
@@ -237,7 +237,7 @@ class BrowsingMixin(MixinProtocol):
         response = await self._send_request(endpoint, body)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST)
 
-        artist: Dict[str, Any] = {"description": None, "views": None}
+        artist: dict[str, Any] = {"description": None, "views": None}
         header = response["header"]["musicImmersiveHeaderRenderer"]
         artist["name"] = nav(header, TITLE_TEXT)
         descriptionShelf = find_object_by_key(results, DESCRIPTION_SHELF[0], is_key=True)
@@ -271,7 +271,7 @@ class BrowsingMixin(MixinProtocol):
 
     async def get_artist_albums(
         self, channelId: str, params: str, limit: Optional[int] = 100, order: Optional[str] = None
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Get the full list of an artist's albums, singles or shows
 
@@ -352,7 +352,7 @@ class BrowsingMixin(MixinProtocol):
 
         return albums
 
-    async def get_user(self, channelId: str) -> Dict:
+    async def get_user(self, channelId: str) -> dict:
         """
         Retrieve a user's page. A user may own videos or playlists.
 
@@ -408,7 +408,7 @@ class BrowsingMixin(MixinProtocol):
         user.update(self.parser.parse_channel_contents(results))
         return user
 
-    async def get_user_playlists(self, channelId: str, params: str) -> List[Dict]:
+    async def get_user_playlists(self, channelId: str, params: str) -> list[dict]:
         """
         Retrieve a list of playlists for a given user.
         Call this function again with the returned ``params`` to get the full list.
@@ -450,7 +450,7 @@ class BrowsingMixin(MixinProtocol):
             browse_id = matches.group().strip('"')
         return browse_id
 
-    async def get_album(self, browseId: str) -> Dict:
+    async def get_album(self, browseId: str) -> dict:
         """
         Get information and tracks of an album
 
@@ -540,7 +540,7 @@ class BrowsingMixin(MixinProtocol):
 
         return album
 
-    async def get_song(self, videoId: str, signatureTimestamp: Optional[int] = None) -> Dict:
+    async def get_song(self, videoId: str, signatureTimestamp: Optional[int] = None) -> dict:
         """
         Returns metadata and streaming information about a song or video.
 
@@ -807,7 +807,7 @@ class BrowsingMixin(MixinProtocol):
         sections = nav(response, ["contents", *SECTION_LIST])
         return parse_mixed_content(sections)
 
-    async def get_lyrics(self, browseId: str) -> Dict:
+    async def get_lyrics(self, browseId: str) -> dict:
         """
         Returns lyrics of a song or video.
 
@@ -867,7 +867,7 @@ class BrowsingMixin(MixinProtocol):
 
         return int(match.group(1))
 
-    async def get_tasteprofile(self) -> Dict:
+    async def get_tasteprofile(self) -> dict:
         """
         Fetches suggested artists from taste profile (music.youtube.com/tasteprofile).
         Tasteprofile allows users to pick artists to update their recommendations.
@@ -899,7 +899,7 @@ class BrowsingMixin(MixinProtocol):
                 }
         return taste_profiles
 
-    async def set_tasteprofile(self, artists: List[str], taste_profile: Optional[Dict] = None) -> None:
+    async def set_tasteprofile(self, artists: list[str], taste_profile: Optional[dict] = None) -> None:
         """
         Favorites artists to see more recommendations from the artist.
         Use :py:func:`get_tasteprofile` to see which artists are available to be recommended

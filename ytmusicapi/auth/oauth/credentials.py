@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Dict, Mapping, Optional
+from typing import Optional
 
 from aiohttp import ClientSession
 
@@ -48,7 +49,7 @@ class OAuthCredentials(Credentials):
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
         session: Optional[ClientSession] = None,
-        proxies: Optional[Dict] = None,
+        proxies: Optional[dict] = None,
     ):
         """
         :param client_id: Optional. Set the GoogleAPI client_id used for auth flows.
