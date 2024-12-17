@@ -48,7 +48,7 @@ class LibraryMixin(MixinProtocol):
         return playlists
 
     async def get_library_songs(
-        self, limit: int = 25, validate_responses: bool = False, order: Optional[str] = None
+        self, limit: int = 25, validate_responses: bool = False, order: Optional[LibraryOrderType] = None
     ) -> list[dict]:
         """
         Gets the songs in the user's library (liked videos are not included).
@@ -118,7 +118,7 @@ class LibraryMixin(MixinProtocol):
 
         return songs
 
-    async def get_library_albums(self, limit: int = 25, order: Optional[str] = None) -> list[dict]:
+    async def get_library_albums(self, limit: int = 25, order: Optional[LibraryOrderType] = None) -> list[dict]:
         """
         Gets the albums in the user's library.
 
@@ -153,7 +153,7 @@ class LibraryMixin(MixinProtocol):
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    async def get_library_artists(self, limit: int = 25, order: Optional[str] = None) -> list[dict]:
+    async def get_library_artists(self, limit: int = 25, order: Optional[LibraryOrderType] = None) -> list[dict]:
         """
         Gets the artists of the songs in the user's library.
 
@@ -181,7 +181,9 @@ class LibraryMixin(MixinProtocol):
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    async def get_library_subscriptions(self, limit: int = 25, order: Optional[str] = None) -> list[dict]:
+    async def get_library_subscriptions(
+        self, limit: int = 25, order: Optional[LibraryOrderType] = None
+    ) -> list[dict]:
         """
         Gets the artists the user has subscribed to.
 
@@ -200,7 +202,7 @@ class LibraryMixin(MixinProtocol):
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    async def get_library_podcasts(self, limit: int = 25, order: Optional[str] = None) -> list[dict]:
+    async def get_library_podcasts(self, limit: int = 25, order: Optional[LibraryOrderType] = None) -> list[dict]:
         """
         Get podcasts the user has added to the library
 
@@ -246,7 +248,7 @@ class LibraryMixin(MixinProtocol):
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    async def get_library_channels(self, limit: int = 25, order: Optional[str] = None) -> list[dict]:
+    async def get_library_channels(self, limit: int = 25, order: Optional[LibraryOrderType] = None) -> list[dict]:
         """
         Get channels the user has added to the library
 
