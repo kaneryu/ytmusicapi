@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union
+﻿from typing import Any, Optional, Union
 
 from ytmusicapi.continuations import *
 from ytmusicapi.helpers import sum_total_duration
@@ -42,13 +42,13 @@ class PlaylistsMixin(MixinProtocol):
               "suggestions": [
                   {
                     "videoId": "HLCsfOykA94",
-                    "title": "Mambo (GATTÜSO Remix)",
+                    "title": "Mambo (GATTÃœSO Remix)",
                     "artists": [{
                         "name": "Nikki Vianna",
                         "id": "UCMW5eSIO1moVlIBLQzq4PnQ"
                       }],
                     "album": {
-                      "name": "Mambo (GATTÜSO Remix)",
+                      "name": "Mambo (GATTÃœSO Remix)",
                       "id": "MPREb_jLeQJsd7U9w"
                     },
                     "likeStatus": "LIKE",
@@ -65,7 +65,7 @@ class PlaylistsMixin(MixinProtocol):
                     "title": "Presenting MYRNE",
                     "playlistId": "RDCLAK5uy_mbdO3_xdD4NtU1rWI0OmvRSRZ8NH4uJCM",
                     "thumbnails": [...],
-                    "description": "Playlist • YouTube Music"
+                    "description": "Playlist â€¢ YouTube Music"
                   }
               ],
               "tracks": [
@@ -107,7 +107,12 @@ class PlaylistsMixin(MixinProtocol):
         browseId = "VL" + playlistId if not playlistId.startswith("VL") else playlistId
         body = {"browseId": browseId}
         endpoint = "browse"
+        request_func = lambda additionalParams: self._send_request(endpoint, body, additionalParams)
         response = await self._send_request(endpoint, body)
+
+        if playlistId.startswith("OLA") or playlistId.startswith("VLOLA"):
+            return parse_audio_playlist(response, limit, request_func)
+
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST_ITEM + ["musicPlaylistShelfRenderer"], True)
         if not results:
             return await self._parse_new_playlist_format(
@@ -118,8 +123,6 @@ class PlaylistsMixin(MixinProtocol):
         playlist.update(parse_playlist_header(response))
         if playlist["trackCount"] is None:
             playlist["trackCount"] = len(results["contents"])
-
-        request_func = lambda additionalParams: self._send_request(endpoint, body, additionalParams)
 
         # suggestions and related are missing e.g. on liked songs
         section_list = nav(response, [*SINGLE_COLUMN_TAB, "sectionListRenderer"])
@@ -204,8 +207,6 @@ class PlaylistsMixin(MixinProtocol):
         playlist.update(parse_playlist_header_meta(header))
 
         playlist.update(parse_song_runs(nav(header, SUBTITLE_RUNS)[2 + playlist["owned"] * 2 :]))
-
-        request_func = lambda additionalParams: self._send_request(endpoint, body, additionalParams)
 
         # suggestions and related are missing e.g. on liked songs
         playlist["related"] = []
