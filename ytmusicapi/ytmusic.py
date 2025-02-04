@@ -4,7 +4,7 @@ import locale
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
-from functools import partial
+from functools import cached_property, partial
 from pathlib import Path
 from typing import Optional, Union
 
@@ -15,14 +15,13 @@ from requests.structures import CaseInsensitiveDict
 from ytmusicapi.helpers import (
     SUPPORTED_LANGUAGES,
     SUPPORTED_LOCATIONS,
-    USER_AGENT,
     YTM_BASE_API,
-    YTM_DOMAIN,
     YTM_PARAMS,
     YTM_PARAMS_KEY,
     get_authorization,
     get_visitor_id,
     initialize_context,
+    initialize_headers,
     sapisid_from_cookie,
 )
 from ytmusicapi.mixins.browsing import BrowsingMixin
@@ -157,16 +156,7 @@ class YTMusicBase:
         if self.auth_type == AuthType.BROWSER or self.auth_type == AuthType.OAUTH_CUSTOM_FULL:
             return self._auth_headers
 
-        return CaseInsensitiveDict(
-            {
-                "user-agent": USER_AGENT,
-                "accept": "*/*",
-                "accept-encoding": "gzip, deflate",
-                "content-type": "application/json",
-                "content-encoding": "gzip",
-                "origin": YTM_DOMAIN,
-            }
-        )
+        return initialize_headers()
 
     @property
     def headers(self) -> CaseInsensitiveDict:
