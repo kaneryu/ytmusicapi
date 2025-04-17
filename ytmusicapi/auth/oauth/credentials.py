@@ -1,9 +1,8 @@
+import typing
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientResponse
 
 from ytmusicapi.constants import (
     OAUTH_CODE_URL,
@@ -13,6 +12,7 @@ from ytmusicapi.constants import (
 )
 
 from ...exceptions import YTMusicServerError
+from ...type_alias import JsonDict
 from .exceptions import BadOAuthClient, UnauthorizedOAuthClient
 from .models import AuthCodeDict, BaseTokenDict, RefreshableTokenDict
 
@@ -25,7 +25,7 @@ class Credentials(ABC):
     client_secret: str
 
     @abstractmethod
-    def get_code(self) -> Mapping:
+    def get_code(self) -> AuthCodeDict:
         """Method for obtaining a new user auth code. First step of token creation."""
 
     @abstractmethod
@@ -50,8 +50,8 @@ class OAuthCredentials(Credentials):
         self,
         client_id: str,
         client_secret: str,
-        session: Optional[ClientSession] = None,
-        proxies: Optional[dict] = None,
+        session: ClientSession | None = None,
+        proxies: dict[str, str] | None = None,
     ):
         """
         :param client_id: Optional. Set the GoogleAPI ``client_id`` used for auth flows.
@@ -77,9 +77,9 @@ class OAuthCredentials(Credentials):
     async def get_code(self) -> AuthCodeDict:
         """Method for obtaining a new user auth code. First step of token creation."""
         code_response = await self._send_request(OAUTH_CODE_URL, data={"scope": OAUTH_SCOPE})
-        return await code_response.json()
+        return typing.cast(AuthCodeDict, await code_response.json())
 
-    async def _send_request(self, url, data):
+    async def _send_request(self, url: str, data: JsonDict) -> ClientResponse:
         """Method for sending post requests with required client_id and User-Agent modifications"""
 
         data.update({"client_id": self.client_id})
@@ -111,7 +111,7 @@ class OAuthCredentials(Credentials):
                 "code": device_code,
             },
         )
-        return await response.json()
+        return typing.cast(RefreshableTokenDict, await response.json())
 
     async def refresh_token(self, refresh_token: str) -> BaseTokenDict:
         """
@@ -130,4 +130,4 @@ class OAuthCredentials(Credentials):
             },
         )
 
-        return await response.json()
+        return typing.cast(BaseTokenDict, await response.json())

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gettext
 import json
 import locale
@@ -6,10 +8,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from functools import cached_property, partial
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any
 
 from aiohttp import ClientSession, ClientResponse
 import aiohttp
+from requests import get as requests_get
+from requests import Response
+from requests import post as requests_post
 from requests.structures import CaseInsensitiveDict
 
 from ytmusicapi.helpers import (
@@ -39,18 +44,19 @@ from .auth.oauth import OAuthCredentials, RefreshingToken
 from .auth.oauth.token import Token
 from .auth.types import AuthType
 from .exceptions import YTMusicServerError, YTMusicUserError
+from .type_alias import JsonDict
 
 
 class YTMusicBase:
     def __init__(
         self,
-        auth: Optional[Union[str, dict]] = None,
-        user: Optional[str] = None,
-        requests_session: Optional[aiohttp.ClientSession] = None,
-        proxies: Optional[dict[str, str]] = None,
+        auth: str | JsonDict | None = None,
+        user: str | None = None,
+        requests_session: aiohttp.ClientSession | None = None,
+        proxies: dict[str, str] | None = None,
         language: str = "en",
         location: str = "",
-        oauth_credentials: Optional[OAuthCredentials] = None,
+        oauth_credentials: OAuthCredentials | None = None,
     ):
         """
         Create a new instance to interact with YouTube Music.
@@ -88,14 +94,14 @@ class YTMusicBase:
         """
         #: request session for connection pooling
         self._session = self._prepare_session(requests_session)
-        self.proxies: Optional[dict[str, str]] = proxies  #: params for session modification
+        self.proxies: dict[str, str] | None = proxies  #: params for session modification
 
         # see google cookie docs: https://policies.google.com/technologies/cookies
         # value from https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube.py#L502
         self.cookies = {"SOCS": "CAI"}
-        self._visitor_id: Optional[str] = None
+        self._visitor_id: str | None = None
 
-        self._auth_headers: CaseInsensitiveDict = CaseInsensitiveDict()
+        self._auth_headers: CaseInsensitiveDict[str] = CaseInsensitiveDict[str]()
         self.auth_type = AuthType.UNAUTHORIZED
         if auth is not None:
             self._auth_headers, auth_path = parse_auth_str(auth)
@@ -145,25 +151,28 @@ class YTMusicBase:
         if self.auth_type == AuthType.BROWSER:
             self.params += YTM_PARAMS_KEY
             try:
-                cookie = self.base_headers.get("cookie")
+                cookie = self.base_headers["cookie"]
                 self.sapisid = sapisid_from_cookie(cookie)
-                self.origin = self.base_headers.get("origin", self.base_headers.get("x-origin"))
+                self.origin: str = self.base_headers.get("origin", str(self.base_headers.get("x-origin")))
             except KeyError:
                 raise YTMusicUserError("Your cookie is missing the required value __Secure-3PAPISID")
 
-    @property
-    def base_headers(self) -> CaseInsensitiveDict:
-        if self.auth_type == AuthType.BROWSER or self.auth_type == AuthType.OAUTH_CUSTOM_FULL:
-            return self._auth_headers
+    @cached_property
+    def base_headers(self) -> CaseInsensitiveDict[str]:
+        headers = (
+            self._auth_headers
+            if self.auth_type == AuthType.BROWSER or self.auth_type == AuthType.OAUTH_CUSTOM_FULL
+            else initialize_headers()
+        )
+
+        if "X-Goog-Visitor-Id" not in headers:
+            headers.update(get_visitor_id(partial(self.__send_get_request_sync, use_base_headers=True)))
 
         return initialize_headers()
 
     @property
-    def headers(self) -> CaseInsensitiveDict:
+    def headers(self) -> CaseInsensitiveDict[str]:
         headers = self.base_headers.copy()
-
-        if self._visitor_id:
-            headers["X-Goog-Visitor-Id"] = self._visitor_id
 
         # keys updated each use, custom oauth implementations left untouched
         if self.auth_type == AuthType.BROWSER:
@@ -181,6 +190,14 @@ class YTMusicBase:
         """Ensure visitor ID is fetched and cached"""
         if self._visitor_id is None and "X-Goog-Visitor-Id" not in self.base_headers:
             response = await self._send_get_request("https://music.youtube.com/", use_base_headers=True)
+            visitor_id = response.headers.get("X-Goog-Visitor-Id")
+            if visitor_id:
+                self._visitor_id = visitor_id
+    
+    def __ensure_visitor_id_sync(self) -> None:
+        """Ensure visitor ID is fetched and cached"""
+        if self._visitor_id is None and "X-Goog-Visitor-Id" not in self.base_headers:
+            response = self.__send_get_request_sync("https://music.youtube.com/", use_base_headers=True)
             visitor_id = response.headers.get("X-Goog-Visitor-Id")
             if visitor_id:
                 self._visitor_id = visitor_id
@@ -219,7 +236,7 @@ class YTMusicBase:
             # safely restore the old context
             self.context["context"]["client"] = copied_context_client
 
-    def _prepare_session(self, requests_session: Optional[aiohttp.ClientSession]) -> aiohttp.ClientSession:
+    def _prepare_session(self, requests_session: aiohttp.ClientSession | None) -> aiohttp.ClientSession:
         """Prepare requests session or use user-provided requests_session"""
         if isinstance(requests_session, aiohttp.ClientSession):
             return requests_session
@@ -227,7 +244,7 @@ class YTMusicBase:
         self._session.request = partial(self._session.request, timeout=30)  # type: ignore[method-assign]
         return self._session
 
-    async def _send_request(self, endpoint: str, body: dict, additionalParams: str = "") -> dict:
+    async def _send_request(self, endpoint: str, body: JsonDict, additionalParams: str = "") -> JsonDict:
         # Ensure visitor ID is available before making requests
         await self._ensure_visitor_id()
         
@@ -240,34 +257,60 @@ class YTMusicBase:
             # proxies=self.proxies,
             cookies=self.cookies,
         )
-        response_text = await response.json()
+        response_text: JsonDict = await response.json()
         if response.status >= 400:
             message = "Server returned HTTP " + str(response.status) + ": " + (response.reason or "") + ".\n"
             error = response_text.get("error", {}).get("message")
             raise YTMusicServerError(message + error)
         return response_text
+    
+
 
     async def _send_get_request(
-        self, url: str, params: Optional[dict] = None, use_base_headers: bool = False
+        self, url: str, params: JsonDict | None = None, use_base_headers: bool = False
     ) -> ClientResponse:
         response = await self._session.get(
             url,
             params=params,
             # handle first-use x-goog-visitor-id fetching
-            headers=self.base_headers if use_base_headers else self.headers,
+            headers=initialize_headers() if use_base_headers else self.headers,
             # proxies=self.proxies,
             cookies=self.cookies,
         )
         return response
 
-    def _check_auth(self):
+    def __send_get_request_sync(
+        self, url: str, params: JsonDict | None = None, use_base_headers: bool = False
+    ) -> Response:
+        response = requests_get(
+            url,
+            params=params,
+            # handle first-use x-goog-visitor-id fetching
+            headers=initialize_headers() if use_base_headers else self.headers,
+            # proxies=self.proxies,
+            cookies=self.cookies,
+        )
+        return response
+    
+    def _check_auth(self) -> None:
+        """
+        Checks if the user has provided authorization credentials
+
+        Raises:
+            YTMusicUserError: if the user is not authorized
+        """
         if self.auth_type == AuthType.UNAUTHORIZED:
             raise YTMusicUserError("Please provide authentication before using this function")
 
-    def __enter__(self):
+    def __enter__(self) -> YTMusicBase:
         return self
 
-    def __exit__(self, execType=None, execValue=None, trackback=None):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any | None,
+    ) -> bool | None:
         pass
 
 

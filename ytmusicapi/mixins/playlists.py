@@ -1,10 +1,10 @@
-﻿from typing import Any, Optional, Union
-
 from ytmusicapi.continuations import *
+from ytmusicapi.exceptions import YTMusicUserError
 from ytmusicapi.helpers import sum_total_duration
 from ytmusicapi.navigation import *
 from ytmusicapi.parsers.browsing import parse_content_list, parse_playlist
 from ytmusicapi.parsers.playlists import *
+from ytmusicapi.type_alias import JsonDict, JsonList, ParseFuncType, RequestFuncBodyType, RequestFuncType
 
 from ._protocol import MixinProtocol
 from ._utils import *
@@ -12,8 +12,8 @@ from ._utils import *
 
 class PlaylistsMixin(MixinProtocol):
     async def get_playlist(
-        self, playlistId: str, limit: Optional[int] = 100, related: bool = False, suggestions_limit: int = 0
-    ) -> dict:
+        self, playlistId: str, limit: int | None = 100, related: bool = False, suggestions_limit: int = 0
+    ) -> JsonDict:
         """
         Returns a list of playlist items
 
@@ -107,10 +107,12 @@ class PlaylistsMixin(MixinProtocol):
         browseId = "VL" + playlistId if not playlistId.startswith("VL") else playlistId
         body = {"browseId": browseId}
         endpoint = "browse"
-        request_func = lambda additionalParams: self._send_request(endpoint, body, additionalParams)
-        response = await self._send_request(endpoint, body)
+        request_func: RequestFuncType = lambda additionalParams: self._send_request(
+            endpoint, body, additionalParams
+        )
+        response = await request_func("")
 
-        request_func_continuations = lambda body: self._send_request(endpoint, body)
+        request_func_continuations: RequestFuncBodyType = lambda body: self._send_request(endpoint, body)
         if playlistId.startswith("OLA") or playlistId.startswith("VLOLA"):
             return parse_audio_playlist(response, limit, request_func_continuations)
 
@@ -181,7 +183,7 @@ class PlaylistsMixin(MixinProtocol):
 
         header_data = nav(response, [*TWO_COLUMN_RENDERER, *TAB_CONTENT, *SECTION_LIST_ITEM])
         section_list = nav(response, [*TWO_COLUMN_RENDERER, "secondaryContents", *SECTION])
-        playlist: dict = {}
+        playlist: JsonDict = {}
         playlist["owned"] = EDITABLE_PLAYLIST_DETAIL_HEADER[0] in header_data
         if not playlist["owned"]:
             header = nav(header_data, RESPONSIVE_HEADER)
@@ -214,7 +216,7 @@ class PlaylistsMixin(MixinProtocol):
         if "continuations" in section_list:
             additionalParams = get_continuation_params(section_list)
             if playlist["owned"] and (suggestions_limit > 0 or related):
-                parse_func = lambda results: parse_playlist_items(results)
+                parse_func: ParseFuncType = lambda results: parse_playlist_items(results)
                 suggested = await request_func(additionalParams)
                 continuation = nav(suggested, SECTION_LIST_CONTINUATION)
                 additionalParams = get_continuation_params(continuation)
@@ -223,13 +225,12 @@ class PlaylistsMixin(MixinProtocol):
 
                 parse_func = lambda results: parse_playlist_items(results)
                 playlist["suggestions"].extend(
-                    await get_continuations(
+                    await get_reloadable_continuations(
                         suggestions_shelf,
                         "musicShelfContinuation",
                         suggestions_limit - len(playlist["suggestions"]),
                         request_func,
                         parse_func,
-                        reloadable=True,
                     )
                 )
 
@@ -255,7 +256,7 @@ class PlaylistsMixin(MixinProtocol):
         playlist["duration_seconds"] = sum_total_duration(playlist)
         return playlist
 
-    async def get_liked_songs(self, limit: int = 100) -> dict:
+    async def get_liked_songs(self, limit: int = 100) -> JsonDict:
         """
         Gets playlist items for the 'Liked Songs' playlist
 
@@ -264,7 +265,7 @@ class PlaylistsMixin(MixinProtocol):
         """
         return await self.get_playlist("LM", limit)
 
-    async def get_saved_episodes(self, limit: int = 100) -> dict:
+    async def get_saved_episodes(self, limit: int = 100) -> JsonDict:
         """
         Gets playlist items for the 'Liked Songs' playlist
 
@@ -278,9 +279,9 @@ class PlaylistsMixin(MixinProtocol):
         title: str,
         description: str,
         privacy_status: str = "PRIVATE",
-        video_ids: Optional[list] = None,
-        source_playlist: Optional[str] = None,
-    ) -> Union[str, dict]:
+        video_ids: list[str] | None = None,
+        source_playlist: str | None = None,
+    ) -> str | JsonDict:
         """
         Creates a new empty playlist and returns its id.
 
@@ -299,7 +300,7 @@ class PlaylistsMixin(MixinProtocol):
             msg = f"{title} contains invalid characters: {', '.join(invalid_characters_found)}"
             raise YTMusicUserError(msg)
 
-        body = {
+        body: JsonDict = {
             "title": title,
             "description": html_to_txt(description),  # YT does not allow HTML tags
             "privacyStatus": privacy_status,
@@ -317,13 +318,13 @@ class PlaylistsMixin(MixinProtocol):
     async def edit_playlist(
         self,
         playlistId: str,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        privacyStatus: Optional[str] = None,
-        moveItem: Optional[Union[str, tuple[str, str]]] = None,
-        addPlaylistId: Optional[str] = None,
-        addToTop: Optional[bool] = None,
-    ) -> Union[str, dict]:
+        title: str | None = None,
+        description: str | None = None,
+        privacyStatus: str | None = None,
+        moveItem: str | tuple[str, str] | None = None,
+        addPlaylistId: str | None = None,
+        addToTop: bool | None = None,
+    ) -> str | JsonDict:
         """
         Edit title, description or privacyStatus of a playlist.
         You may also move an item within a playlist or append another playlist to this playlist.
@@ -340,7 +341,7 @@ class PlaylistsMixin(MixinProtocol):
         :return: Status String or full response
         """
         self._check_auth()
-        body: dict[str, Any] = {"playlistId": validate_playlist_id(playlistId)}
+        body: JsonDict = {"playlistId": validate_playlist_id(playlistId)}
         actions = []
         if title:
             actions.append({"action": "ACTION_SET_PLAYLIST_NAME", "playlistName": title})
@@ -374,7 +375,7 @@ class PlaylistsMixin(MixinProtocol):
         response = await self._send_request(endpoint, body)
         return response["status"] if "status" in response else response
 
-    async def delete_playlist(self, playlistId: str) -> Union[str, dict]:
+    async def delete_playlist(self, playlistId: str) -> str | JsonDict:
         """
         Delete a playlist.
 
@@ -390,10 +391,10 @@ class PlaylistsMixin(MixinProtocol):
     async def add_playlist_items(
         self,
         playlistId: str,
-        videoIds: Optional[list[str]] = None,
-        source_playlist: Optional[str] = None,
+        videoIds: list[str] | None = None,
+        source_playlist: str | None = None,
         duplicates: bool = False,
-    ) -> Union[str, dict]:
+    ) -> str | JsonDict:
         """
         Add songs to an existing playlist
 
@@ -404,7 +405,7 @@ class PlaylistsMixin(MixinProtocol):
         :return: Status String and a dict containing the new setVideoId for each videoId or full response
         """
         self._check_auth()
-        body: dict[str, Any] = {"playlistId": validate_playlist_id(playlistId), "actions": []}
+        body: JsonDict = {"playlistId": validate_playlist_id(playlistId), "actions": []}
         if not videoIds and not source_playlist:
             raise YTMusicUserError(
                 "You must provide either videoIds or a source_playlist to add to the playlist"
@@ -436,7 +437,7 @@ class PlaylistsMixin(MixinProtocol):
         else:
             return response
 
-    async def remove_playlist_items(self, playlistId: str, videos: list[dict]) -> Union[str, dict]:
+    async def remove_playlist_items(self, playlistId: str, videos: JsonList) -> str | JsonDict:
         """
         Remove songs from an existing playlist
 
@@ -452,7 +453,7 @@ class PlaylistsMixin(MixinProtocol):
                 "Cannot remove songs, because setVideoId is missing. Do you own this playlist?"
             )
 
-        body: dict[str, Any] = {"playlistId": validate_playlist_id(playlistId), "actions": []}
+        body: JsonDict = {"playlistId": validate_playlist_id(playlistId), "actions": []}
         for video in videos:
             body["actions"].append(
                 {
