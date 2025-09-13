@@ -56,6 +56,7 @@ class YTMusicBase:
         requests_session: aiohttp.ClientSession | None = None,
         proxies: dict[str, str] | None = None,
         language: str = "en",
+        locale_dir: str | None = None,
         location: str = "",
         oauth_credentials: OAuthCredentials | None = None,
     ):
@@ -140,7 +141,10 @@ class YTMusicBase:
             with suppress(locale.Error):
                 locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
 
-        locale_dir = Path(__file__).parent.resolve() / "locales"
+        if locale_dir is None:
+            locale_dir = Path(__file__).parent.resolve() / "locales"
+        else:
+            locale_dir = Path(locale_dir).resolve()
         self.lang = gettext.translation("base", localedir=locale_dir, languages=[language])
         self.parser = Parser(self.lang)
 
