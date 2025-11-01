@@ -876,6 +876,68 @@ class BrowsingMixin(MixinProtocol):
         
         return album_browse_id
 
+    async def get_album_songs_clean(self, album_id: str) -> JsonList:
+        """
+        Get the list of songs from an album, without music videos or any other versions.
+        :param album_id: browseId of the album.
+            returned by :py:func:`search`
+
+        :return: List of songs in the album.
+        """
+        response = await self._send_request("browse", {"browseId": album_id})
+        urlCannonical = nav(response, ["microformat", "microformatDataRenderer", "urlCanonical"], True)
+        if not urlCannonical:
+            return []
+        playlistid = urlCannonical.split("list=")[-1]
+        playlist = await self._send_request("browse", {"browseId": "VL" + playlistid})
+
+        raw_songlist = nav(playlist, [*TWO_COLUMN_RENDERER, "secondaryContents", *SECTION_LIST_ITEM, "musicPlaylistShelfRenderer", "contents"], True) or []
+
+        output = {}
+        """fmt
+        {
+            "title": "Song Title",
+            "videoId": "video id",
+            "artist: "Artist Name",
+            "artistBrowseId": "artist browseId",
+            "album": "Album Name",
+            "albumBrowseId": "album browseId",
+            
+            "thumbnails": [...],
+        }
+        """
+        
+        for songitem in raw_songlist:
+            musicResponsiveListItemRenderer = songitem.get("musicResponsiveListItemRenderer")
+            if not musicResponsiveListItemRenderer:
+                continue
+            
+            thumbnails = nav(musicResponsiveListItemRenderer, [*THUMBNAILS], True) or []
+            videoId = nav(musicResponsiveListItemRenderer, ["playlistItemData", "videoId"], True)
+
+            flexColumns = musicResponsiveListItemRenderer.get("flexColumns", [])
+            
+            title = nav(flexColumns, [0, *MRLIFCR_TEXT], True) or ""
+            artist = nav(flexColumns, [1, *MRLIFCR_TEXT], True) or ""
+            artistBrowseId = nav(flexColumns, [1, *MRLIFCR_BROWSEID], True)
+            albumName = nav(flexColumns, [2, *MRLIFCR_TEXT], True) or ""
+            albumBrowseId = nav(flexColumns, [2, *MRLIFCR_BROWSEID], True)
+
+            output[videoId] = {
+                "title": title,
+                "videoId": videoId,
+                "artist": artist,
+                "artistBrowseId": artistBrowseId,
+                "album": albumName,
+                "albumBrowseId": albumBrowseId,
+                "thumbnails": thumbnails,
+            }
+            
+        return list(output.values())
+        
+        
+        
+
     @overload
     async def get_lyrics(self, browseId: str, timestamps: Literal[False] = False) -> Lyrics | None:
         """overload for mypy only"""
