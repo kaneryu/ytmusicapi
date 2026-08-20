@@ -96,12 +96,16 @@ Usage
 ------
 .. code-block:: python
 
+    import asyncio
     from ytmusicapi import YTMusic
 
-    yt = YTMusic('oauth.json')
-    playlistId = yt.create_playlist('test', 'test description')
-    search_results = yt.search('Oasis Wonderwall')
-    yt.add_playlist_items(playlistId, [search_results[0]['videoId']])
+    async def main():
+        async with YTMusic('oauth.json') as yt:
+            playlistId = await yt.create_playlist('test', 'test description')
+            search_results = await yt.search('Oasis Wonderwall')
+            await yt.add_playlist_items(playlistId, [search_results[0]['videoId']])
+
+    asyncio.run(main())
 
 The `tests <https://github.com/sigma67/ytmusicapi/blob/main/tests/>`_ are also a great source of usage examples.
 

@@ -17,7 +17,7 @@ def is_artist_carousel(contents: JsonList) -> bool:
 
 
 class ChartsMixin(MixinProtocol):
-    def get_charts(self, country: str = "ZZ") -> JsonDict:
+    async def get_charts(self, country: str = "ZZ") -> JsonDict:
         """
         Get latest charts data from YouTube Music: Artists and playlists of top videos.
         Unauthenticated requests return unranked Artists with "rank" and "trend" set to None.
@@ -69,7 +69,7 @@ class ChartsMixin(MixinProtocol):
         if country:
             body["formData"] = {"selectedValues": [country]}
 
-        response = self._send_request("browse", body)
+        response = await self._send_request("browse", body)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST)
         charts: JsonDict = {"countries": {}}
         menu = nav(

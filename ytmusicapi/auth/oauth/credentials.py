@@ -2,8 +2,8 @@ import typing
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-import requests
-from requests import Response
+import httpx
+from httpx import Response
 
 from ytmusicapi.constants import (
     OAUTH_CODE_URL,
@@ -11,6 +11,7 @@ from ytmusicapi.constants import (
     OAUTH_TOKEN_URL,
     OAUTH_USER_AGENT,
 )
+from ytmusicapi.helpers import build_async_client
 
 from ...exceptions import YTMusicServerError
 from ...type_alias import JsonDict
@@ -26,15 +27,15 @@ class Credentials(ABC):
     client_secret: str
 
     @abstractmethod
-    def get_code(self) -> AuthCodeDict:
+    async def get_code(self) -> AuthCodeDict:
         """Method for obtaining a new user auth code. First step of token creation."""
 
     @abstractmethod
-    def token_from_code(self, device_code: str) -> RefreshableTokenDict:
+    async def token_from_code(self, device_code: str) -> RefreshableTokenDict:
         """Method for verifying user auth code and conversion into a FullTokenDict."""
 
     @abstractmethod
-    def refresh_token(self, refresh_token: str) -> BaseTokenDict:
+    async def refresh_token(self, refresh_token: str) -> BaseTokenDict:
         """Method for requesting a new access token for a given refresh_token.
         Token must have been created by the same OAuth client."""
 
@@ -51,7 +52,7 @@ class OAuthCredentials(Credentials):
         self,
         client_id: str,
         client_secret: str,
-        session: requests.Session | None = None,
+        session: httpx.AsyncClient | None = None,
         proxies: dict[str, str] | None = None,
     ):
         """
@@ -71,20 +72,19 @@ class OAuthCredentials(Credentials):
         self.client_id = client_id
         self.client_secret = client_secret
 
-        self._session = session if session else requests.Session()  # for auth requests
-        if proxies:
-            self._session.proxies.update(proxies)
+        # for auth requests; proxies must be bound at client construction time in httpx
+        self._session = session if session else build_async_client(proxies)
 
-    def get_code(self) -> AuthCodeDict:
+    async def get_code(self) -> AuthCodeDict:
         """Method for obtaining a new user auth code. First step of token creation."""
-        code_response = self._send_request(OAUTH_CODE_URL, data={"scope": OAUTH_SCOPE})
+        code_response = await self._send_request(OAUTH_CODE_URL, data={"scope": OAUTH_SCOPE})
         return typing.cast(AuthCodeDict, code_response.json())
 
-    def _send_request(self, url: str, data: JsonDict) -> Response:
+    async def _send_request(self, url: str, data: JsonDict) -> Response:
         """Method for sending post requests with required client_id and User-Agent modifications"""
 
         data.update({"client_id": self.client_id})
-        response = self._session.post(url, data, headers={"User-Agent": OAUTH_USER_AGENT})
+        response = await self._session.post(url, data=data, headers={"User-Agent": OAUTH_USER_AGENT})
         if response.status_code == 401:
             data = response.json()
             issue = data.get("error")
@@ -102,9 +102,9 @@ class OAuthCredentials(Credentials):
                 )
         return response
 
-    def token_from_code(self, device_code: str) -> RefreshableTokenDict:
+    async def token_from_code(self, device_code: str) -> RefreshableTokenDict:
         """Method for verifying user auth code and conversion into a FullTokenDict."""
-        response = self._send_request(
+        response = await self._send_request(
             OAUTH_TOKEN_URL,
             data={
                 "client_secret": self.client_secret,
@@ -114,7 +114,7 @@ class OAuthCredentials(Credentials):
         )
         return typing.cast(RefreshableTokenDict, response.json())
 
-    def refresh_token(self, refresh_token: str) -> BaseTokenDict:
+    async def refresh_token(self, refresh_token: str) -> BaseTokenDict:
         """
         Method for requesting a new access token for a given ``refresh_token``.
         Token must have been created by the same OAuth client.
@@ -122,7 +122,7 @@ class OAuthCredentials(Credentials):
         :param refresh_token: Corresponding ``refresh_token`` for a matching ``access_token``.
             Obtained via
         """
-        response = self._send_request(
+        response = await self._send_request(
             OAUTH_TOKEN_URL,
             data={
                 "client_secret": self.client_secret,

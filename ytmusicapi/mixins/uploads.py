@@ -1,7 +1,7 @@
 import typing
 from pathlib import Path
 
-import requests
+import httpx
 
 from ytmusicapi.continuations import get_continuations
 from ytmusicapi.helpers import *
@@ -24,7 +24,7 @@ from ._utils import LibraryOrderType, prepare_order_params, validate_order_param
 
 
 class UploadsMixin(MixinProtocol):
-    def get_library_upload_songs(
+    async def get_library_upload_songs(
         self, limit: int | None = 25, order: LibraryOrderType | None = None
     ) -> JsonList:
         """
@@ -55,7 +55,7 @@ class UploadsMixin(MixinProtocol):
         validate_order_parameter(order)
         if order is not None:
             body["params"] = prepare_order_params(order)
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         results = get_library_contents(response, MUSIC_SHELF)
         if results is None:
             return []
@@ -68,14 +68,14 @@ class UploadsMixin(MixinProtocol):
             )
             remaining_limit = None if limit is None else (limit - len(songs))
             songs.extend(
-                get_continuations(
+                await get_continuations(
                     results, "musicShelfContinuation", remaining_limit, request_func, parse_uploaded_items
                 )
             )
 
         return songs
 
-    def get_library_upload_albums(
+    async def get_library_upload_albums(
         self, limit: int | None = 25, order: LibraryOrderType | None = None
     ) -> JsonList:
         """
@@ -91,12 +91,12 @@ class UploadsMixin(MixinProtocol):
         if order is not None:
             body["params"] = prepare_order_params(order)
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_albums(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_albums(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_library_upload_artists(
+    async def get_library_upload_artists(
         self, limit: int | None = 25, order: LibraryOrderType | None = None
     ) -> JsonList:
         """
@@ -112,12 +112,12 @@ class UploadsMixin(MixinProtocol):
         if order is not None:
             body["params"] = prepare_order_params(order)
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_artists(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_artists(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_library_upload_artist(self, browseId: str, limit: int = 25) -> JsonList:
+    async def get_library_upload_artist(self, browseId: str, limit: int = 25) -> JsonList:
         """
         Returns a list of uploaded tracks for the artist.
 
@@ -147,7 +147,7 @@ class UploadsMixin(MixinProtocol):
         self._check_auth()
         body = {"browseId": browseId}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST_ITEM + MUSIC_SHELF)
         if len(results["contents"]) > 1:
             results["contents"].pop(0)
@@ -161,14 +161,14 @@ class UploadsMixin(MixinProtocol):
             parse_func: ParseFuncType = lambda contents: parse_uploaded_items(contents)
             remaining_limit = None if limit is None else (limit - len(items))
             items.extend(
-                get_continuations(
+                await get_continuations(
                     results, "musicShelfContinuation", remaining_limit, request_func, parse_func
                 )
             )
 
         return items
 
-    def get_library_upload_album(self, browseId: str) -> JsonDict:
+    async def get_library_upload_album(self, browseId: str) -> JsonDict:
         """
         Get information and tracks of an album associated with uploaded tracks
 
@@ -203,14 +203,14 @@ class UploadsMixin(MixinProtocol):
         self._check_auth()
         body = {"browseId": browseId}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         album = parse_album_header(response)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST_ITEM + MUSIC_SHELF)
         album["tracks"] = parse_uploaded_items(results["contents"])
         album["duration_seconds"] = sum_total_duration(album)
         return album
 
-    def upload_song(self, filepath: str) -> ResponseStatus | requests.Response:
+    async def upload_song(self, filepath: str) -> ResponseStatus | httpx.Response:
         """
         Uploads a song to YouTube Music
 
@@ -244,19 +244,20 @@ class UploadsMixin(MixinProtocol):
         headers["X-Goog-Upload-Command"] = "start"
         headers["X-Goog-Upload-Header-Content-Length"] = str(filesize)
         headers["X-Goog-Upload-Protocol"] = "resumable"
-        response = requests.post(upload_url, data=body, headers=headers, proxies=self.proxies)
+        response = await self._session.post(upload_url, content=body, headers=dict(headers))
         headers["X-Goog-Upload-Command"] = "upload, finalize"
         headers["X-Goog-Upload-Offset"] = "0"
         upload_url = response.headers["X-Goog-Upload-URL"]
-        with open(fp, "rb") as file:
-            response = requests.post(upload_url, data=file, headers=headers, proxies=self.proxies)
+        # read the whole file into memory; the 300MB cap above bounds this
+        file_content = fp.read_bytes()
+        response = await self._session.post(upload_url, content=file_content, headers=dict(headers))
 
         if response.status_code == 200:
             return ResponseStatus.SUCCEEDED
         else:
             return response
 
-    def delete_upload_entity(self, entityId: str) -> str | JsonDict:  # pragma: no cover
+    async def delete_upload_entity(self, entityId: str) -> str | JsonDict:  # pragma: no cover
         """
         Deletes a previously uploaded song or album
 
@@ -270,7 +271,7 @@ class UploadsMixin(MixinProtocol):
             entityId = entityId.replace("FEmusic_library_privately_owned_release_detail", "")
 
         body = {"entityId": entityId}
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         if "error" not in response:
             return ResponseStatus.SUCCEEDED

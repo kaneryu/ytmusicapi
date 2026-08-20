@@ -32,9 +32,28 @@ With the :code:`ytmusic` instance you can now perform authenticated requests:
 
 .. code-block:: python
 
-    playlistId = ytmusic.create_playlist("test", "test description")
-    search_results = ytmusic.search("Oasis Wonderwall")
-    ytmusic.add_playlist_items(playlistId, [search_results[0]['videoId']])
+    playlistId = await ytmusic.create_playlist("test", "test description")
+    search_results = await ytmusic.search("Oasis Wonderwall")
+    await ytmusic.add_playlist_items(playlistId, [search_results[0]['videoId']])
+
+All request methods are coroutines, so they must be awaited from inside an event loop.
+``YTMusic`` is also an async context manager, which closes the underlying HTTP client
+on exit:
+
+.. code-block:: python
+
+    import asyncio
+    from ytmusicapi import YTMusic
+
+    async def main():
+        async with YTMusic("browser.json") as ytmusic:
+            return await ytmusic.search("Oasis Wonderwall")
+
+    results = asyncio.run(main())
+
+If you construct ``YTMusic`` without the context manager, call ``await ytmusic.close()``
+when you are done. A client you pass in yourself via ``requests_session`` is never closed
+for you.
 
 Brand accounts
 ##############

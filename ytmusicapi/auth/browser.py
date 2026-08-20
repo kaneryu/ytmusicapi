@@ -1,8 +1,7 @@
 import json
 import platform
 
-from requests.structures import CaseInsensitiveDict
-
+from ytmusicapi._headers import CaseInsensitiveDict
 from ytmusicapi.exceptions import YTMusicError, YTMusicUserError
 from ytmusicapi.helpers import *
 

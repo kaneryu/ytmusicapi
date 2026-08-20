@@ -37,7 +37,7 @@ def get_continuation_token(results: JsonList) -> str | None:
     return None
 
 
-def get_continuations_2025(
+async def get_continuations_2025(
     results: JsonDict,
     limit: int | None,
     request_func: RequestFuncBodyType,
@@ -46,7 +46,7 @@ def get_continuations_2025(
     items: JsonList = []
     continuation_token = get_continuation_token(results["contents"])
     while continuation_token and (limit is None or len(items) < limit):
-        response = request_func({"continuation": continuation_token})
+        response = await request_func({"continuation": continuation_token})
         continuation_items = nav(response, CONTINUATION_ITEMS, True)
         if not continuation_items:
             break
@@ -60,7 +60,7 @@ def get_continuations_2025(
     return items
 
 
-def get_reloadable_continuations(
+async def get_reloadable_continuations(
     results: JsonDict,
     continuation_type: str,
     limit: int | None,
@@ -69,12 +69,12 @@ def get_reloadable_continuations(
 ) -> JsonList:
     """Reloadable continuations are a special case that only exists on the playlists page (suggestions)."""
     additionalParams = get_reloadable_continuation_params(results)
-    return get_continuations(
+    return await get_continuations(
         results, continuation_type, limit, request_func, parse_func, additionalParams=additionalParams
     )
 
 
-def get_continuations(
+async def get_continuations(
     results: JsonDict,
     continuation_type: str,
     limit: int | None,
@@ -100,7 +100,7 @@ def get_continuations(
     items: JsonList = []
     while "continuations" in results and (limit is None or len(items) < limit):
         additional_params = additionalParams or get_continuation_params(results, ctoken_path)
-        response = request_func(additional_params)
+        response = await request_func(additional_params)
         if "continuationContents" in response:
             results = response["continuationContents"][continuation_type]
         else:
@@ -113,7 +113,7 @@ def get_continuations(
     return items
 
 
-def get_validated_continuations(
+async def get_validated_continuations(
     results: JsonDict,
     continuation_type: str,
     limit: int,
@@ -130,7 +130,7 @@ def get_validated_continuations(
         )
         validate_func = lambda parsed: validate_response(parsed, per_page, limit, len(items))
 
-        response = resend_request_until_parsed_response_is_valid(
+        response = await resend_request_until_parsed_response_is_valid(
             request_func, additionalParams, wrapped_parse_func, validate_func, 3
         )
         results = response["results"]
@@ -173,18 +173,18 @@ def get_continuation_contents(continuation: JsonDict, parse_func: ParseFuncType)
     return []
 
 
-def resend_request_until_parsed_response_is_valid(
+async def resend_request_until_parsed_response_is_valid(
     request_func: RequestFuncType,
     request_additional_params: str,
     parse_func: ParseFuncDictType,
     validate_func: Callable[[dict[str, Any]], bool],
     max_retries: int,
 ) -> JsonDict:
-    response = request_func(request_additional_params)
+    response = await request_func(request_additional_params)
     parsed_object = parse_func(response)
     retry_counter = 0
     while not validate_func(parsed_object) and retry_counter < max_retries:
-        response = request_func(request_additional_params)
+        response = await request_func(request_additional_params)
         attempt = parse_func(response)
         if len(attempt["parsed"]) > len(parsed_object["parsed"]):
             parsed_object = attempt

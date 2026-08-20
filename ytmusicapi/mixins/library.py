@@ -2,7 +2,7 @@ import warnings
 from collections.abc import Callable
 from random import randint
 
-from requests import Response
+from httpx import Response
 
 from ytmusicapi.continuations import *
 from ytmusicapi.exceptions import YTMusicUserError
@@ -18,7 +18,7 @@ from ._utils import *
 
 
 class LibraryMixin(MixinProtocol):
-    def get_library_playlists(self, limit: int | None = 25) -> JsonList:
+    async def get_library_playlists(self, limit: int | None = 25) -> JsonList:
         """
         Retrieves the playlists in the user's library.
 
@@ -38,7 +38,7 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"browseId": "FEmusic_liked_playlists"}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         results = get_library_contents(response, GRID)
         if results is None:
@@ -52,12 +52,14 @@ class LibraryMixin(MixinProtocol):
             parse_func: ParseFuncType = lambda contents: parse_content_list(contents, parse_playlist)
             remaining_limit = None if limit is None else (limit - len(playlists))
             playlists.extend(
-                get_continuations(results, "gridContinuation", remaining_limit, request_func, parse_func)
+                await get_continuations(
+                    results, "gridContinuation", remaining_limit, request_func, parse_func
+                )
             )
 
         return playlists
 
-    def get_library_songs(
+    async def get_library_songs(
         self, limit: int = 25, validate_responses: bool = False, order: LibraryOrderType | None = None
     ) -> JsonList:
         """
@@ -88,11 +90,11 @@ class LibraryMixin(MixinProtocol):
             validate_func: Callable[[JsonDict], bool] = lambda parsed: validate_response(
                 parsed, per_page, limit, 0
             )
-            response = resend_request_until_parsed_response_is_valid(
+            response = await resend_request_until_parsed_response_is_valid(
                 request_func, "", parse_func, validate_func, 3
             )
         else:
-            response = parse_func(request_func(""))
+            response = parse_func(await request_func(""))
 
         results = response["results"]
         songs: JsonList | None = response["parsed"]
@@ -107,7 +109,7 @@ class LibraryMixin(MixinProtocol):
 
             if validate_responses:
                 songs.extend(
-                    get_validated_continuations(
+                    await get_validated_continuations(
                         results,
                         "musicShelfContinuation",
                         limit - len(songs),
@@ -119,7 +121,7 @@ class LibraryMixin(MixinProtocol):
             else:
                 remaining_limit = None if limit is None else (limit - len(songs))
                 songs.extend(
-                    get_continuations(
+                    await get_continuations(
                         results,
                         "musicShelfContinuation",
                         remaining_limit,
@@ -130,7 +132,7 @@ class LibraryMixin(MixinProtocol):
 
         return songs
 
-    def get_library_albums(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
+    async def get_library_albums(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
         """
         Gets the albums in the user's library.
 
@@ -160,12 +162,12 @@ class LibraryMixin(MixinProtocol):
             body["params"] = prepare_order_params(order)
 
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_albums(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_albums(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_library_artists(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
+    async def get_library_artists(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
         """
         Gets the artists of the songs in the user's library.
 
@@ -188,12 +190,14 @@ class LibraryMixin(MixinProtocol):
         if order is not None:
             body["params"] = prepare_order_params(order)
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_artists(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_artists(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_library_subscriptions(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
+    async def get_library_subscriptions(
+        self, limit: int = 25, order: LibraryOrderType | None = None
+    ) -> JsonList:
         """
         Gets the artists the user has subscribed to.
 
@@ -207,12 +211,14 @@ class LibraryMixin(MixinProtocol):
         if order is not None:
             body["params"] = prepare_order_params(order)
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_artists(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_artists(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_library_podcasts(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
+    async def get_library_podcasts(
+        self, limit: int = 25, order: LibraryOrderType | None = None
+    ) -> JsonList:
         """
         Get podcasts the user has added to the library
 
@@ -253,12 +259,14 @@ class LibraryMixin(MixinProtocol):
         if order is not None:
             body["params"] = prepare_order_params(order)
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_podcasts(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_podcasts(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_library_channels(self, limit: int = 25, order: LibraryOrderType | None = None) -> JsonList:
+    async def get_library_channels(
+        self, limit: int = 25, order: LibraryOrderType | None = None
+    ) -> JsonList:
         """
         Get channels the user has added to the library
 
@@ -289,12 +297,12 @@ class LibraryMixin(MixinProtocol):
         if order is not None:
             body["params"] = prepare_order_params(order)
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
-        return parse_library_artists(
+        response = await self._send_request(endpoint, body)
+        return await parse_library_artists(
             response, lambda additionalParams: self._send_request(endpoint, body, additionalParams), limit
         )
 
-    def get_history(self) -> JsonList:
+    async def get_history(self) -> JsonList:
         """
         Gets your play history in reverse chronological order
 
@@ -305,7 +313,7 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"browseId": "FEmusic_history"}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST)
         songs = []
         for content in results:
@@ -320,7 +328,7 @@ class LibraryMixin(MixinProtocol):
 
         return songs
 
-    def add_history_item(self, song: JsonDict) -> Response:
+    async def add_history_item(self, song: JsonDict) -> Response:
         """
         Add an item to the account's history using the playbackTracking URI
         obtained from :py:func:`get_song`. A ``204`` return code indicates success.
@@ -342,9 +350,9 @@ class LibraryMixin(MixinProtocol):
         CPNA = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
         cpn = "".join(CPNA[randint(0, 256) & 63] for _ in range(16))
         params = {"ver": 2, "c": "WEB_REMIX", "cpn": cpn}
-        return self._send_get_request(url, params)
+        return await self._send_get_request(url, params)
 
-    def remove_history_items(self, feedbackTokens: list[str]) -> JsonDict:  # pragma: no cover
+    async def remove_history_items(self, feedbackTokens: list[str]) -> JsonDict:  # pragma: no cover
         """
         Remove an item from the account's history. This method does currently not work with brand accounts
 
@@ -354,11 +362,13 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"feedbackTokens": feedbackTokens}
         endpoint = "feedback"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         return response
 
-    def rate_song(self, videoId: str, rating: LikeStatus = LikeStatus.INDIFFERENT) -> JsonDict | None:
+    async def rate_song(
+        self, videoId: str, rating: LikeStatus = LikeStatus.INDIFFERENT
+    ) -> JsonDict | None:
         """
         Rates a song ("thumbs up"/"thumbs down" interactions on YouTube Music)
 
@@ -373,9 +383,9 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"target": {"videoId": videoId}}
         endpoint = prepare_like_endpoint(rating)
-        return self._send_request(endpoint, body)
+        return await self._send_request(endpoint, body)
 
-    def edit_song_library_status(self, feedbackTokens: list[str] | None = None) -> JsonDict:
+    async def edit_song_library_status(self, feedbackTokens: list[str] | None = None) -> JsonDict:
         """
         Depending on the provided tokens:
         - Adds or removes songs from your library
@@ -390,9 +400,11 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"feedbackTokens": feedbackTokens}
         endpoint = "feedback"
-        return self._send_request(endpoint, body)
+        return await self._send_request(endpoint, body)
 
-    def rate_playlist(self, playlistId: str, rating: LikeStatus = LikeStatus.INDIFFERENT) -> JsonDict:
+    async def rate_playlist(
+        self, playlistId: str, rating: LikeStatus = LikeStatus.INDIFFERENT
+    ) -> JsonDict:
         """
         Rates a playlist/album ("Add to library"/"Remove from library" interactions on YouTube Music)
         You can also dislike a playlist/album, which has an effect on your recommendations
@@ -408,9 +420,9 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"target": {"playlistId": playlistId}}
         endpoint = prepare_like_endpoint(rating)
-        return self._send_request(endpoint, body)
+        return await self._send_request(endpoint, body)
 
-    def subscribe_artist(self, channelId: str) -> JsonDict:
+    async def subscribe_artist(self, channelId: str) -> JsonDict:
         """
         Subscribe to an artist. Adds the artist to your library
 
@@ -420,9 +432,9 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"channelIds": [channelId]}
         endpoint = "subscription/subscribe"
-        return self._send_request(endpoint, body)
+        return await self._send_request(endpoint, body)
 
-    def subscribe_artists(self, channelIds: list[str]) -> JsonDict:
+    async def subscribe_artists(self, channelIds: list[str]) -> JsonDict:
         """
         Subscribe to artists. Adds the artists to your library
 
@@ -443,9 +455,9 @@ class LibraryMixin(MixinProtocol):
             raise YTMusicUserError(
                 "YouTube Music only supports subscribing to one artist at a time. Use subscribe_artist instead."
             )
-        return self.subscribe_artist(channelIds[0])
+        return await self.subscribe_artist(channelIds[0])
 
-    def unsubscribe_artists(self, channelIds: list[str]) -> JsonDict:
+    async def unsubscribe_artists(self, channelIds: list[str]) -> JsonDict:
         """
         Unsubscribe from artists. Removes the artists from your library
 
@@ -455,9 +467,9 @@ class LibraryMixin(MixinProtocol):
         self._check_auth()
         body = {"channelIds": channelIds}
         endpoint = "subscription/unsubscribe"
-        return self._send_request(endpoint, body)
+        return await self._send_request(endpoint, body)
 
-    def get_account_info(self) -> JsonDict:
+    async def get_account_info(self) -> JsonDict:
         """
         Gets information about the currently authenticated user's account.
 
@@ -473,7 +485,7 @@ class LibraryMixin(MixinProtocol):
         """
         self._check_auth()
         endpoint = "account/account_menu"
-        response = self._send_request(endpoint, {})
+        response = await self._send_request(endpoint, {})
 
         ACCOUNT_INFO = [
             "actions",

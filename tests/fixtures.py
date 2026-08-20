@@ -1,8 +1,19 @@
 """Test fixtures to make life easier."""
 
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+
+def load_json_fixture(path: Path) -> Any:
+    """Read a JSON fixture from disk.
+
+    Kept as a plain sync function so async tests can call it without tripping ruff's
+    ASYNC rules about blocking I/O inside coroutines.
+    """
+    return json.loads(path.read_text(encoding="utf8"))
 
 
 @pytest.fixture(name="repo_path")

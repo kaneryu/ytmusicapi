@@ -3,18 +3,41 @@ import locale
 import re
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from hashlib import sha1
 from http.cookies import SimpleCookie
 from typing import Any
 
-from requests import Response
-from requests.structures import CaseInsensitiveDict
+import httpx
+from httpx import Response
 
+from ytmusicapi._headers import CaseInsensitiveDict
 from ytmusicapi.constants import *
 from ytmusicapi.models.content.text_run import TextRun
 from ytmusicapi.navigation import nav
 from ytmusicapi.type_alias import JsonDict
+
+#: default per-request timeout, matching the 30s upstream applies to its requests session
+DEFAULT_TIMEOUT = 30.0
+
+
+def build_async_client(
+    proxies: dict[str, str] | None = None, timeout: float = DEFAULT_TIMEOUT
+) -> httpx.AsyncClient:
+    """Build an :class:`httpx.AsyncClient` configured to behave like the upstream requests session.
+
+    ``follow_redirects`` is enabled explicitly because requests follows redirects by default
+    while httpx does not. Proxies must be bound at construction time in httpx, so a
+    requests-style ``{"http": ..., "https": ...}`` mapping is translated into per-scheme mounts.
+
+    :param proxies: Optional. Proxy configuration in requests format.
+    :param timeout: Optional. Per-request timeout in seconds.
+    """
+    mounts: dict[str, httpx.AsyncBaseTransport] | None = None
+    if proxies:
+        mounts = {f"{scheme}://": httpx.AsyncHTTPTransport(proxy=url) for scheme, url in proxies.items()}
+
+    return httpx.AsyncClient(timeout=timeout, mounts=mounts, follow_redirects=True)
 
 
 def initialize_headers() -> CaseInsensitiveDict[str]:
@@ -42,8 +65,8 @@ def initialize_context() -> JsonDict:
     }
 
 
-def get_visitor_id(request_func: Callable[[str], Response]) -> dict[str, str]:
-    response = request_func(YTM_DOMAIN)
+async def get_visitor_id(request_func: Callable[[str], Awaitable[Response]]) -> dict[str, str]:
+    response = await request_func(YTM_DOMAIN)
     matches = re.findall(r"ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;", response.text)
     visitor_id = ""
     if len(matches) > 0:

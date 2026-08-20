@@ -3,8 +3,7 @@ from pathlib import Path
 from string import printable
 from urllib.parse import quote, quote_from_bytes
 
-from requests.structures import CaseInsensitiveDict
-
+from ytmusicapi._headers import CaseInsensitiveDict
 from ytmusicapi.auth.oauth import OAuthToken
 from ytmusicapi.auth.types import AuthType
 from ytmusicapi.exceptions import YTMusicUserError

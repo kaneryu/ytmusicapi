@@ -33,7 +33,9 @@ def parse_artists(results: JsonList, uploaded: bool = False) -> JsonList:
     return artists
 
 
-def parse_library_albums(response: JsonDict, request_func: RequestFuncType, limit: int | None) -> JsonList:
+async def parse_library_albums(
+    response: JsonDict, request_func: RequestFuncType, limit: int | None
+) -> JsonList:
     results = get_library_contents(response, GRID)
     if results is None:
         return []
@@ -43,7 +45,7 @@ def parse_library_albums(response: JsonDict, request_func: RequestFuncType, limi
         parse_func: ParseFuncType = lambda contents: parse_albums(contents)
         remaining_limit = None if limit is None else (limit - len(albums))
         albums.extend(
-            get_continuations(results, "gridContinuation", remaining_limit, request_func, parse_func)
+            await get_continuations(results, "gridContinuation", remaining_limit, request_func, parse_func)
         )
 
     return albums
@@ -68,7 +70,9 @@ def parse_albums(results: JsonList) -> JsonList:
     return albums
 
 
-def parse_library_podcasts(response: JsonDict, request_func: RequestFuncType, limit: int | None) -> JsonList:
+async def parse_library_podcasts(
+    response: JsonDict, request_func: RequestFuncType, limit: int | None
+) -> JsonList:
     results = get_library_contents(response, GRID)
     if results is None:
         return []
@@ -78,13 +82,15 @@ def parse_library_podcasts(response: JsonDict, request_func: RequestFuncType, li
     if "continuations" in results:
         remaining_limit = None if limit is None else (limit - len(podcasts))
         podcasts.extend(
-            get_continuations(results, "gridContinuation", remaining_limit, request_func, parse_func)
+            await get_continuations(results, "gridContinuation", remaining_limit, request_func, parse_func)
         )
 
     return podcasts
 
 
-def parse_library_artists(response: JsonDict, request_func: RequestFuncType, limit: int | None) -> JsonList:
+async def parse_library_artists(
+    response: JsonDict, request_func: RequestFuncType, limit: int | None
+) -> JsonList:
     results = get_library_contents(response, MUSIC_SHELF)
     if results is None:
         return []
@@ -94,7 +100,9 @@ def parse_library_artists(response: JsonDict, request_func: RequestFuncType, lim
         parse_func: ParseFuncType = lambda contents: parse_artists(contents)
         remaining_limit = None if limit is None else (limit - len(artists))
         artists.extend(
-            get_continuations(results, "musicShelfContinuation", remaining_limit, request_func, parse_func)
+            await get_continuations(
+                results, "musicShelfContinuation", remaining_limit, request_func, parse_func
+            )
         )
 
     return artists

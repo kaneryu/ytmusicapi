@@ -24,7 +24,7 @@ _SearchScopeType = Literal["uploads", "library"]
 
 
 class SearchMixin(MixinProtocol):
-    def search(
+    async def search(
         self,
         query: str,
         filter: _SearchFilterType | None = None,
@@ -204,7 +204,7 @@ class SearchMixin(MixinProtocol):
         if params:
             body["params"] = params
 
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         # no results
         if "contents" not in response:
@@ -286,7 +286,7 @@ class SearchMixin(MixinProtocol):
                     return parse_search_results(contents, result_type, category)
 
                 search_results.extend(
-                    get_continuations(
+                    await get_continuations(
                         res["musicShelfRenderer"],
                         "musicShelfContinuation",
                         limit - len(search_results),
@@ -297,7 +297,7 @@ class SearchMixin(MixinProtocol):
 
         return search_results
 
-    def get_search_suggestions(self, query: str, detailed_runs: bool = False) -> list[str] | JsonList:
+    async def get_search_suggestions(self, query: str, detailed_runs: bool = False) -> list[str] | JsonList:
         """
         Get Search Suggestions
 
@@ -373,11 +373,13 @@ class SearchMixin(MixinProtocol):
         body = {"input": query}
         endpoint = "music/get_search_suggestions"
 
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         return parse_search_suggestions(response, detailed_runs)
 
-    def remove_search_suggestions(self, suggestions: JsonList, indices: list[int] | None = None) -> bool:
+    async def remove_search_suggestions(
+        self, suggestions: JsonList, indices: list[int] | None = None
+    ) -> bool:
         """
         Remove search suggestion from the user search history.
 
@@ -419,6 +421,6 @@ class SearchMixin(MixinProtocol):
         body = {"feedbackTokens": feedback_tokens}
         endpoint = "feedback"
 
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         return bool(nav(response, ["feedbackResponses", 0, "isProcessed"], none_if_absent=True))

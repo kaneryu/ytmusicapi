@@ -1,12 +1,14 @@
 import argparse
+import asyncio
 import importlib.metadata
 import sys
 from pathlib import Path
 
-import requests
+import httpx
 
 from ytmusicapi.auth.browser import setup_browser
 from ytmusicapi.auth.oauth import OAuthCredentials, RefreshingToken
+from ytmusicapi.helpers import build_async_client
 
 
 def setup(filepath: str | None = None, headers_raw: str | None = None) -> str:
@@ -22,11 +24,11 @@ def setup(filepath: str | None = None, headers_raw: str | None = None) -> str:
     return setup_browser(filepath, headers_raw)
 
 
-def setup_oauth(
+async def setup_oauth(
     client_id: str,
     client_secret: str,
     filepath: str | None = None,
-    session: requests.Session | None = None,
+    session: httpx.AsyncClient | None = None,
     proxies: dict[str, str] | None = None,
     open_browser: bool = False,
 ) -> RefreshingToken:
@@ -44,12 +46,17 @@ def setup_oauth(
 
     :return: configuration headers string
     """
-    if not session:
-        session = requests.Session()
+    owns_session = session is None
+    if session is None:
+        session = build_async_client(proxies)
 
     oauth_credentials = OAuthCredentials(client_id, client_secret, session, proxies)
 
-    return RefreshingToken.prompt_for_token(oauth_credentials, open_browser, filepath)
+    try:
+        return await RefreshingToken.prompt_for_token(oauth_credentials, open_browser, filepath)
+    finally:
+        if owns_session:
+            await session.aclose()
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
@@ -87,8 +94,14 @@ def main() -> RefreshingToken | str:
             args.client_id = input("Enter your Google Youtube Data API client ID: ")
         if args.client_secret is None:
             args.client_secret = input("Enter your Google Youtube Data API client secret: ")
-        return setup_oauth(
-            client_id=args.client_id, client_secret=args.client_secret, filepath=filename, open_browser=True
+        # main() stays synchronous: it is the ``ytmusicapi`` console entry point
+        return asyncio.run(
+            setup_oauth(
+                client_id=args.client_id,
+                client_secret=args.client_secret,
+                filepath=filename,
+                open_browser=True,
+            )
         )
     else:
         return setup(filename)

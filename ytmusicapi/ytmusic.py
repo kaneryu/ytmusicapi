@@ -11,9 +11,10 @@ from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
 
-import requests
-from requests import Response
-from requests.structures import CaseInsensitiveDict
+import httpx
+from httpx import Response
+
+from ytmusicapi._headers import CaseInsensitiveDict
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -24,6 +25,7 @@ from ytmusicapi.helpers import (
     YTM_BASE_API,
     YTM_PARAMS,
     YTM_PARAMS_KEY,
+    build_async_client,
     get_authorization,
     get_visitor_id,
     initialize_context,
@@ -48,15 +50,19 @@ from .auth.types import AuthType
 from .exceptions import YTMusicServerError, YTMusicUserError
 from .type_alias import JsonDict
 
+#: client override that makes the API answer as if it were the Android mobile app
+MOBILE_CLIENT = {"clientName": "ANDROID_MUSIC", "clientVersion": "7.21.50"}
+
 
 class YTMusicBase:
     def __init__(
         self,
         auth: str | JsonDict | None = None,
         user: str | None = None,
-        requests_session: requests.Session | None = None,
+        requests_session: httpx.AsyncClient | None = None,
         proxies: dict[str, str] | None = None,
         language: str = "en",
+        locale_dir: str | Path | None = None,
         location: str = "",
         oauth_credentials: OAuthCredentials | None = None,
     ):
@@ -72,15 +78,18 @@ class YTMusicBase:
           Otherwise the default account is used. You can retrieve the user ID
           by going to https://myaccount.google.com/brandaccounts and selecting your brand account.
           The user ID will be in the URL: https://myaccount.google.com/b/user_id/
-        :param requests_session: A Requests session object or None to create one.
-          Default sessions have a request timeout of 30s, which produces a requests.exceptions.ReadTimeout.
-          The timeout can be changed by passing your own Session object::
+        :param requests_session: An ``httpx.AsyncClient`` or None to create one.
+          Default clients have a request timeout of 30s, which produces an httpx.ReadTimeout.
+          The timeout can be changed by passing your own client::
 
-            s = requests.Session()
-            s.request = functools.partial(s.request, timeout=3)
-            ytm = YTMusic(requests_session=s)
+            client = httpx.AsyncClient(timeout=3, follow_redirects=True)
+            ytm = YTMusic(requests_session=client)
 
-        :param proxies: Optional. Proxy configuration in requests_ format_.
+          A client passed in this way is not closed by ``YTMusic``; you own its lifetime.
+
+        :param proxies: Optional. Proxy configuration in requests_ format_, for example
+            ``{"https": "http://localhost:8080"}``. Translated into per-scheme httpx mounts.
+            Ignored when ``requests_session`` is provided - configure proxies on that client instead.
 
             .. _requests: https://requests.readthedocs.io/
             .. _format: https://requests.readthedocs.io/en/master/user/advanced/#proxies
@@ -91,15 +100,22 @@ class YTMusicBase:
         :param location: Optional. Can be used to change the location of the user.
             No location will be set by default. This means it is determined by the server.
             Available languages can be checked in the FAQ.
+        :param locale_dir: Optional. Path to a directory of gettext translations to use
+            instead of the ones bundled with ytmusicapi.
         :param oauth_credentials: Optional. Used to specify a different oauth client to be
             used for authentication flow.
         """
+        #: whether the session is ours to close - a caller-supplied client is left alone
+        self._owns_session = requests_session is None
         #: request session for connection pooling
-        self._session = self._prepare_session(requests_session)
+        self._session = self._prepare_session(requests_session, proxies)
         self.proxies: dict[str, str] | None = proxies  #: params for session modification
         # see google cookie docs: https://policies.google.com/technologies/cookies
         # value from https://github.com/yt-dlp/yt-dlp/blob/2023.09.24/yt_dlp/extractor/youtube.py#L502
         self.cookies = {"SOCS": "CAI"}
+        # httpx deprecates per-request cookies, so they live on the client jar instead.
+        # This also applies to a caller-supplied client, which needs the cookie to work.
+        self._session.cookies.update(self.cookies)
 
         self._auth_headers: CaseInsensitiveDict[str] = CaseInsensitiveDict[str]()
         self.auth_type = AuthType.UNAUTHORIZED
@@ -144,7 +160,11 @@ class YTMusicBase:
             with suppress(locale.Error):
                 locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
 
-        locale_dir = Path(__file__).parent.resolve() / "locales"
+        locale_dir = (
+            Path(locale_dir).resolve()
+            if locale_dir is not None
+            else Path(__file__).parent.resolve() / "locales"
+        )
         self.lang = gettext.translation("base", localedir=locale_dir, languages=[language])
         self.parser = Parser(self.lang)
 
@@ -170,14 +190,14 @@ class YTMusicBase:
             else initialize_headers()
         )
 
-        if "X-Goog-Visitor-Id" not in headers:
-            headers.update(get_visitor_id(partial(self._send_get_request, use_base_headers=True)))
-
+        # NOTE: unlike upstream, the visitor id is *not* fetched here - it needs a network
+        # round trip, which cannot be awaited from a cached_property. `_ensure_visitor_id`
+        # fills it in on first request instead.
         return headers
 
     @property
     def headers(self) -> CaseInsensitiveDict[str]:
-        headers = self.base_headers
+        headers = self.base_headers.copy()
 
         # keys updated each use, custom oauth implementations left untouched
         if self.auth_type == AuthType.BROWSER:
@@ -191,75 +211,117 @@ class YTMusicBase:
 
         return headers
 
+    async def _ensure_visitor_id(self) -> None:
+        """Fetch and cache the ``X-Goog-Visitor-Id`` header on first use.
+
+        Upstream does this from the ``base_headers`` cached_property, which is impossible
+        here because the fetch is a coroutine. It runs once, before the first request.
+        """
+        if "X-Goog-Visitor-Id" in self.base_headers:
+            return
+
+        self.base_headers.update(
+            await get_visitor_id(partial(self._send_get_request, use_base_headers=True))
+        )
+
+    async def _ensure_token_fresh(self) -> None:
+        """Refresh an expiring OAuth access token before it is read by the ``headers`` property."""
+        if self.auth_type == AuthType.OAUTH_CUSTOM_CLIENT:
+            await self._token.refresh_if_expiring()
+
     @contextmanager
     def as_mobile(self) -> Iterator[None]:
         """
-        Not thread-safe!
-        ----------------
+        Disabled in the async port - raises :class:`NotImplementedError`.
+        ----------------------------------------------------------------
 
-        Temporarily changes the `context` to enable different results
-        from the API, meant for the Android mobile-app.
-        All calls inside the `with`-statement with emulate mobile behavior.
+        Upstream implements this by mutating ``self.context`` in place for the duration of
+        the ``with`` block. That was already documented as not thread-safe; under asyncio it
+        is worse, because any concurrently running task that issues a request inside the
+        block silently gets mobile results, and one that outlives the block silently does
+        not. There is no correct in-place version of this on a shared client.
 
-        This context-manager has no `enter_result`, as it operates in-place
-        and only temporarily alters the underlying `YTMusic`-object.
+        To reinstate it, thread the client override through as a per-request argument
+        (``_send_request(..., context=...)``) rather than mutating shared state, or use a
+        dedicated ``YTMusic`` instance configured for mobile.
 
+        Upstream behaviour, for reference: temporarily changes the `context` to enable
+        different results from the API, meant for the Android mobile-app. All calls inside
+        the `with`-statement emulate mobile behavior.
 
         Example::
 
             with yt.as_mobile():
-                yt._send_request(...)  # results as mobile-app
+                await yt._send_request(...)  # results as mobile-app
 
-            yt._send_request(...)  # back to normal, like web-app
+            await yt._send_request(...)  # back to normal, like web-app
 
         """
+        raise NotImplementedError(
+            "as_mobile() is not supported in the async port: it mutates the shared request "
+            "context in place, so concurrent tasks would interfere with each other. Pass the "
+            "mobile context per-request, or use a separate YTMusic instance."
+        )
+        yield None  # pragma: no cover - unreachable; keeps this function a generator
 
-        # change the context to emulate a mobile-app (Android)
-        copied_context_client = self.context["context"]["client"].copy()
-        self.context["context"]["client"].update({"clientName": "ANDROID_MUSIC", "clientVersion": "7.21.50"})
-
-        # this will not catch errors
-        try:
-            yield None
-        finally:
-            # safely restore the old context
-            self.context["context"]["client"] = copied_context_client
-
-    def _prepare_session(self, requests_session: requests.Session | None) -> requests.Session:
-        """Prepare requests session or use user-provided requests_session"""
-        if isinstance(requests_session, requests.Session):
+    def _prepare_session(
+        self, requests_session: httpx.AsyncClient | None, proxies: dict[str, str] | None = None
+    ) -> httpx.AsyncClient:
+        """Prepare an httpx client or use the user-provided one"""
+        if isinstance(requests_session, httpx.AsyncClient):
             return requests_session
-        self._session = requests.Session()
-        self._session.request = partial(self._session.request, timeout=30)  # type: ignore[method-assign]
-        return self._session
+        return build_async_client(proxies)
 
-    def _send_request(self, endpoint: str, body: JsonDict, additionalParams: str = "") -> JsonDict:
-        body.update(self.context)
+    async def _send_request(
+        self, endpoint: str, body: JsonDict, additionalParams: str = "", *, mobile: bool = False
+    ) -> JsonDict:
+        """Send a request to the YouTube Music API.
 
-        response = self._session.post(
+        :param mobile: emulate the Android mobile app for this request only. The override is
+            built per call rather than mutated onto ``self.context``, so concurrent tasks are
+            unaffected. This replaces upstream's ``as_mobile`` context manager.
+        """
+        await self._ensure_visitor_id()
+        await self._ensure_token_fresh()
+
+        context = self.context
+        if mobile:
+            context = {
+                "context": {
+                    **self.context["context"],
+                    "client": {**self.context["context"]["client"], **MOBILE_CLIENT},
+                }
+            }
+
+        body.update(context)
+
+        response = await self._session.post(
             YTM_BASE_API + endpoint + self.params + additionalParams,
             json=body,
-            headers=self.headers,
-            proxies=self.proxies,
-            cookies=self.cookies,
+            headers=dict(self.headers),
         )
         response_text: JsonDict = json.loads(response.text)
         if response.status_code >= 400:
-            message = "Server returned HTTP " + str(response.status_code) + ": " + response.reason + ".\n"
+            message = (
+                "Server returned HTTP " + str(response.status_code) + ": " + response.reason_phrase + ".\n"
+            )
             error = response_text.get("error", {}).get("message")
             raise YTMusicServerError(message + error)
         return response_text
 
-    def _send_get_request(
+    async def _send_get_request(
         self, url: str, params: JsonDict | None = None, use_base_headers: bool = False
     ) -> Response:
-        response = self._session.get(
+        if not use_base_headers:
+            # guard against recursion: the visitor-id fetch itself uses base headers
+            await self._ensure_visitor_id()
+            await self._ensure_token_fresh()
+
+        response = await self._session.get(
             url,
             params=params,
             # handle first-use x-goog-visitor-id fetching
-            headers=initialize_headers() if use_base_headers else self.headers,
-            proxies=self.proxies,
-            cookies=self.cookies,
+            headers=dict(initialize_headers() if use_base_headers else self.headers),
         )
         return response
 
@@ -273,16 +335,22 @@ class YTMusicBase:
         if self.auth_type == AuthType.UNAUTHORIZED:
             raise YTMusicUserError("Please provide authentication before using this function")
 
-    def __enter__(self) -> Self:
+    async def close(self) -> None:
+        """Close the underlying httpx client, unless it was supplied by the caller."""
+        if self._owns_session:
+            await self._session.aclose()
+
+    async def __aenter__(self) -> Self:
         return self
 
-    def __exit__(
+    async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        pass
+        await self.close()
+        return None
 
 
 class YTMusic(

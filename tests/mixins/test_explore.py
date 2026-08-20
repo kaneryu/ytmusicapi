@@ -1,16 +1,16 @@
 class TestExplore:
-    def test_get_mood_playlists(self, yt):
-        categories = yt.get_mood_categories()
+    async def test_get_mood_playlists(self, yt):
+        categories = await yt.get_mood_categories()
         assert len(list(categories)) > 0
         cat = next(iter(categories))
         assert len(categories[cat]) > 0
-        playlists = yt.get_mood_playlists(categories[cat][0]["params"])
+        playlists = await yt.get_mood_playlists(categories[cat][0]["params"])
         assert len(playlists) > 0
 
-    def test_get_explore(self, yt, yt_oauth):
-        assert len(yt.get_explore()) >= 4
+    async def test_get_explore(self, yt, yt_oauth):
+        assert len(await yt.get_explore()) >= 4
 
-        explore = yt_oauth.get_explore()
+        explore = await yt_oauth.get_explore()
         assert len(explore) >= 5
 
         assert all(item["audioPlaylistId"].startswith("OLA") for item in explore["new_releases"])

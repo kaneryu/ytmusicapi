@@ -1,11 +1,12 @@
+import asyncio
 import json
-import time
 from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
 import pytest
 
+from tests.fixtures import load_json_fixture
 from ytmusicapi import YTMusic
 from ytmusicapi.constants import SUPPORTED_LANGUAGES
 from ytmusicapi.enums import ResponseStatus
@@ -13,10 +14,10 @@ from ytmusicapi.exceptions import YTMusicGatedError, YTMusicServerError, YTMusic
 from ytmusicapi.models.content.enums import PlaylistSortOrder, PlaylistVoteEditOptions, VoteStatus
 
 
-def create_playlist(yt: YTMusic, *args: Any, **kwargs: Any) -> str:
+async def create_playlist(yt: YTMusic, *args: Any, **kwargs: Any) -> str:
     """Create a playlist, skipping the test while YTM gates creation for the account."""
     try:
-        playlist_id = yt.create_playlist(*args, **kwargs)
+        playlist_id = await yt.create_playlist(*args, **kwargs)
     except YTMusicGatedError as e:
         pytest.skip(str(e))
 
@@ -24,7 +25,7 @@ def create_playlist(yt: YTMusic, *args: Any, **kwargs: Any) -> str:
     return playlist_id
 
 
-def retry_playlist_edit(edit: Callable[[], Any], attempts: int = 8, delay: int = 5) -> Any:
+async def retry_playlist_edit(edit: Callable[[], Any], attempts: int = 8, delay: int = 5) -> Any:
     """Run the first edit of a freshly created playlist.
 
     YTM rejects these (409 Conflict, or 400 Precondition for collaboration) for up to ~20s
@@ -32,11 +33,11 @@ def retry_playlist_edit(edit: Callable[[], Any], attempts: int = 8, delay: int =
     """
     for attempt in range(1, attempts + 1):
         try:
-            return edit()
+            return await edit()
         except YTMusicServerError:
             if attempt == attempts:
                 raise
-            time.sleep(delay)
+            await asyncio.sleep(delay)
 
 
 class TestPlaylists:
@@ -50,14 +51,12 @@ class TestPlaylists:
             ("2025_01_get_playlist_chart.json", "OLAK5uy_mzYnlaHgFOvLaxqIPnnouEr-idiUn4NIM"),
         ],
     )
-    def test_get_playlist(self, yt, test_file, playlist_id, data_path):
-        with open(data_path / test_file, encoding="utf8") as f:
-            mock_response = json.load(f)
-        with open(data_path / "expected_output" / test_file, encoding="utf8") as f:
-            expected_output = json.load(f)
+    async def test_get_playlist(self, yt, test_file, playlist_id, data_path):
+        mock_response = load_json_fixture(data_path / test_file)
+        expected_output = load_json_fixture(data_path / "expected_output" / test_file)
 
         with mock.patch("ytmusicapi.YTMusic._send_request", return_value=mock_response):
-            playlist = yt.get_playlist(playlist_id)
+            playlist = await yt.get_playlist(playlist_id)
             assert playlist_id == playlist["id"]
 
             assert playlist == playlist | expected_output
@@ -89,8 +88,8 @@ class TestPlaylists:
             ("PLf6FAPI9j8OOAwvsj_FdO5tyd0GcPLnkm", 200, 0),  # track duration > 1k hours
         ],
     )
-    def test_get_playlist_foreign(self, yt_oauth, playlist_id, tracks_len, related_len):
-        playlist = yt_oauth.get_playlist(playlist_id, limit=None, related=True)
+    async def test_get_playlist_foreign(self, yt_oauth, playlist_id, tracks_len, related_len):
+        playlist = await yt_oauth.get_playlist(playlist_id, limit=None, related=True)
         assert len(playlist["duration"]) > 5
         assert playlist["trackCount"] > tracks_len
         # serialize each track to detect duplicates
@@ -99,8 +98,8 @@ class TestPlaylists:
         assert "suggestions" not in playlist
         assert playlist["owned"] is False
 
-    def test_get_large_audio_playlist(self, yt_oauth):
-        album = yt_oauth.get_playlist("OLAK5uy_noLNRtYnrcRVVO9rOyGMx64XyjVSCz1YU", limit=500)
+    async def test_get_large_audio_playlist(self, yt_oauth):
+        album = await yt_oauth.get_playlist("OLAK5uy_noLNRtYnrcRVVO9rOyGMx64XyjVSCz1YU", limit=500)
         assert len(album["tracks"]) == 456
         assert album["trackCount"] == 456
 
@@ -111,40 +110,42 @@ class TestPlaylists:
             "OLAK5uy_ksLYkcnrOSKYl62uxB3ga2zfBZfCuvnJ4",  # Audiobook
         ],
     )
-    def test_get_playlist_audiobook(self, yt, playlist_id):
-        playlist = yt.get_playlist(playlist_id)
+    async def test_get_playlist_audiobook(self, yt, playlist_id):
+        playlist = await yt.get_playlist(playlist_id)
         assert all(
             track["album"]["id"] and track["album"]["name"] == playlist["title"]
             for track in playlist["tracks"]
         )
 
-    def test_get_playlist_empty(self, yt_empty):
+    async def test_get_playlist_empty(self, yt_empty):
         with pytest.raises((YTMusicServerError, KeyError, IndexError)):
-            yt_empty.get_playlist("PLABC")
+            await yt_empty.get_playlist("PLABC")
 
-    def test_get_playlist_no_track_count(self, yt_oauth):
-        playlist = yt_oauth.get_playlist("RDATgXd-")
+    async def test_get_playlist_no_track_count(self, yt_oauth):
+        playlist = await yt_oauth.get_playlist("RDATgXd-")
         assert playlist["trackCount"] is None  # playlist has no trackCount
         assert len(playlist["tracks"]) >= 100
 
-    def test_get_playlist_author(self, yt):
-        playlist = yt.get_playlist("PL9tY0BWXOZFu4vlBOzIOmvT6wjYb2jNiV")
+    async def test_get_playlist_author(self, yt):
+        playlist = await yt.get_playlist("PL9tY0BWXOZFu4vlBOzIOmvT6wjYb2jNiV")
         assert "artists" not in playlist  # shouldn't return the "artists" key from parse_song_runs
         assert playlist["author"] == {"name": "Vevo", "id": "UC2pmfLm7iq6Ov1UwYrWYkZA"}
-        playlist = yt.get_playlist("RDCLAK5uy_l2pHac-aawJYLcesgTf67gaKU-B9ekk1o")
+        playlist = await yt.get_playlist("RDCLAK5uy_l2pHac-aawJYLcesgTf67gaKU-B9ekk1o")
         assert playlist["author"] == {"name": "YouTube Music", "id": None}
 
     # sorted: SUPPORTED_LANGUAGES is a set, so its order varies with PYTHONHASHSEED and
     # xdist workers would each collect a different parametrization
     @pytest.mark.parametrize("language", sorted(SUPPORTED_LANGUAGES))
-    def test_get_playlist_languages(self, language):
+    async def test_get_playlist_languages(self, language):
         yt = YTMusic(language=language)
-        result = yt.get_playlist("PLj4BSJLnVpNyIjbCWXWNAmybc97FXLlTk")
+        result = await yt.get_playlist("PLj4BSJLnVpNyIjbCWXWNAmybc97FXLlTk")
         assert result["trackCount"] == 255
 
     @pytest.mark.xdist_group("playlist")
-    def test_get_playlist_owned(self, config, yt_brand):
-        playlist = yt_brand.get_playlist(config["playlists"]["own"], related=True, suggestions_limit=21)
+    async def test_get_playlist_owned(self, config, yt_brand):
+        playlist = await yt_brand.get_playlist(
+            config["playlists"]["own"], related=True, suggestions_limit=21
+        )
         assert len(playlist["tracks"]) < 100
         assert len(playlist["suggestions"]) == 21
         assert len(playlist["related"]) == 10
@@ -173,8 +174,8 @@ class TestPlaylists:
             ("PLa90Y86mjW3d57WTbI8aBp6Cgx9MHOuHD", False),
         ],
     )
-    def test_get_playlist_with_votes(self, yt_oauth: YTMusic, playlist_id: str, has_vote: bool):
-        playlist = yt_oauth.get_playlist(playlist_id)
+    async def test_get_playlist_with_votes(self, yt_oauth: YTMusic, playlist_id: str, has_vote: bool):
+        playlist = await yt_oauth.get_playlist(playlist_id)
         tracks = playlist["tracks"]
         assert len(tracks) > 0
 
@@ -190,9 +191,9 @@ class TestPlaylists:
             assert vote_status["status"] in VoteStatus
 
     @pytest.mark.xdist_group("playlist")
-    def test_edit_playlist(self, config, yt_brand):
-        playlist = yt_brand.get_playlist(config["playlists"]["own"])
-        response1 = yt_brand.edit_playlist(
+    async def test_edit_playlist(self, config, yt_brand):
+        playlist = await yt_brand.get_playlist(config["playlists"]["own"])
+        response1 = await yt_brand.edit_playlist(
             playlist["id"],
             title="",
             description="",
@@ -203,7 +204,7 @@ class TestPlaylists:
             ),
         )
         assert response1 == ResponseStatus.SUCCEEDED, "Playlist edit 1 failed"
-        response2 = yt_brand.edit_playlist(
+        response2 = await yt_brand.edit_playlist(
             playlist["id"],
             title=playlist["title"],
             description=playlist["description"],
@@ -214,7 +215,7 @@ class TestPlaylists:
             ),
         )
         assert response2 == ResponseStatus.SUCCEEDED, "Playlist edit 2 failed"
-        response3 = yt_brand.edit_playlist(
+        response3 = await yt_brand.edit_playlist(
             playlist["id"],
             title=playlist["title"],
             description=playlist["description"],
@@ -224,11 +225,11 @@ class TestPlaylists:
         assert response3 == "STATUS_SUCCEEDED", "Playlist edit 3 failed"
 
     @pytest.mark.xdist_group("playlist")
-    def test_edit_playlist_collaboration(self, yt_oauth, yt_brand):
-        playlist_id = create_playlist(yt_oauth, "test collaboration", "", privacy_status="UNLISTED")
+    async def test_edit_playlist_collaboration(self, yt_oauth, yt_brand):
+        playlist_id = await create_playlist(yt_oauth, "test collaboration", "", privacy_status="UNLISTED")
 
         try:
-            response = retry_playlist_edit(
+            response = await retry_playlist_edit(
                 lambda: yt_oauth.edit_playlist(
                     playlist_id, collaboration=True, sortOrder=PlaylistSortOrder.TOP_VOTED
                 )
@@ -237,64 +238,70 @@ class TestPlaylists:
             join_collaboration_token = response["joinCollaborationToken"]
 
             TRACK_COUNT = 101
-            response = yt_oauth.add_playlist_items(
+            response = await yt_oauth.add_playlist_items(
                 playlist_id, ["lYBUbBu4W08"] * TRACK_COUNT, duplicates=True
             )
             assert response["status"] == ResponseStatus.SUCCEEDED, "Adding playlist items failed"
 
-            time.sleep(15)  # wait for collaboration to be enabled
+            await asyncio.sleep(15)  # wait for collaboration to be enabled
             assert (
-                yt_brand.join_collaborative_playlist(playlist_id, join_collaboration_token)
+                await yt_brand.join_collaborative_playlist(playlist_id, join_collaboration_token)
                 == ResponseStatus.SUCCEEDED
             )
 
-            playlist = yt_oauth.get_playlist(playlist_id, limit=None)
+            playlist = await yt_oauth.get_playlist(playlist_id, limit=None)
             assert len(playlist["collaborators"]["avatars"]) == 2
             assert "author" not in playlist
 
             # we should have continuations for large vote-sorted playlists
             assert len(playlist["tracks"]) == TRACK_COUNT
 
-            assert yt_oauth.edit_playlist(playlist_id, collaboration=False) == ResponseStatus.SUCCEEDED
-            time.sleep(3)
+            assert (
+                await yt_oauth.edit_playlist(playlist_id, collaboration=False) == ResponseStatus.SUCCEEDED
+            )
+            await asyncio.sleep(3)
 
-            playlist = yt_oauth.get_playlist(playlist_id)
+            playlist = await yt_oauth.get_playlist(playlist_id)
             assert "collaborators" not in playlist
             assert playlist["author"]
         finally:
-            yt_oauth.delete_playlist(playlist_id)
+            await yt_oauth.delete_playlist(playlist_id)
 
     @pytest.mark.xdist_group("playlist")
-    def test_edit_playlist_community_vote(self, yt_oauth: YTMusic):
-        playlist_id = create_playlist(yt_oauth, "test edit community vote", "", privacy_status="UNLISTED")
+    async def test_edit_playlist_community_vote(self, yt_oauth: YTMusic):
+        playlist_id = await create_playlist(
+            yt_oauth, "test edit community vote", "", privacy_status="UNLISTED"
+        )
 
         try:
-            response = retry_playlist_edit(lambda: yt_oauth.edit_playlist(playlist_id, collaboration=True))
+            response = await retry_playlist_edit(
+                lambda: yt_oauth.edit_playlist(playlist_id, collaboration=True)
+            )
             assert isinstance(response, dict)
             # Enable collaboration so can test all 3 vote options.
             assert response["status"] == ResponseStatus.SUCCEEDED
 
-            response = yt_oauth.edit_playlist(playlist_id, voteOption=PlaylistVoteEditOptions.OFF)
+            response = await yt_oauth.edit_playlist(playlist_id, voteOption=PlaylistVoteEditOptions.OFF)
             assert response == ResponseStatus.SUCCEEDED
 
-            response = yt_oauth.edit_playlist(
+            response = await yt_oauth.edit_playlist(
                 playlist_id, voteOption=PlaylistVoteEditOptions.EVERYONE_CAN_VOTE
             )
             assert response == ResponseStatus.SUCCEEDED
 
-            response = yt_oauth.edit_playlist(
+            response = await yt_oauth.edit_playlist(
                 playlist_id, voteOption=PlaylistVoteEditOptions.COLLABORATORS_ONLY
             )
             assert response == ResponseStatus.SUCCEEDED
 
         finally:
-            yt_oauth.delete_playlist(playlist_id)
+            await yt_oauth.delete_playlist(playlist_id)
 
-    def test_create_playlist_invalid_title(self, yt_brand):
+    async def test_create_playlist_invalid_title(self, yt_brand):
         with pytest.raises(YTMusicUserError, match="invalid characters"):
-            yt_brand.create_playlist("test >", description="test")
+            await yt_brand.create_playlist("test >", description="test")
 
-    def test_create_playlist_gated(self, yt_brand):
+    async def test_create_playlist_gated(self, yt_brand):
         """YTM answers with a dialog instead of creating the playlist, e.g. after many creations"""
         mock_response = {
             "actions": [
@@ -310,18 +317,18 @@ class TestPlaylists:
             mock.patch("ytmusicapi.YTMusic._send_request", return_value=mock_response),
             pytest.raises(YTMusicGatedError, match="PAfeature_enablement"),
         ):
-            yt_brand.create_playlist("test", description="test")
+            await yt_brand.create_playlist("test", description="test")
 
     @pytest.mark.xdist_group("playlist")
-    def test_end2end(self, yt_brand, sample_video):
-        playlist_id = create_playlist(
+    async def test_end2end(self, yt_brand, sample_video):
+        playlist_id = await create_playlist(
             yt_brand,
             "test",
             "test description",
             source_playlist="OLAK5uy_lGQfnMNGvYCRdDq9ZLzJV2BJL2aHQsz9Y",
         )
-        retry_playlist_edit(lambda: yt_brand.edit_playlist(playlist_id, addToTop=True))
-        response = yt_brand.add_playlist_items(
+        await retry_playlist_edit(lambda: yt_brand.edit_playlist(playlist_id, addToTop=True))
+        response = await yt_brand.add_playlist_items(
             playlist_id,
             [sample_video, sample_video],
             source_playlist="OLAK5uy_nvjTE32aFYdFN7HCyMv3cGqD3wqBb4Jow",
@@ -329,11 +336,11 @@ class TestPlaylists:
         )
         assert response["status"] == ResponseStatus.SUCCEEDED, "Adding playlist item failed"
         assert len(response["playlistEditResults"]) > 0, "Adding playlist item failed"
-        time.sleep(3)
-        yt_brand.edit_playlist(playlist_id, addToTop=False)
-        time.sleep(3)
-        playlist = yt_brand.get_playlist(playlist_id, related=True)
+        await asyncio.sleep(3)
+        await yt_brand.edit_playlist(playlist_id, addToTop=False)
+        await asyncio.sleep(3)
+        playlist = await yt_brand.get_playlist(playlist_id, related=True)
         assert len(playlist["tracks"]) == 46, "Getting playlist items failed"
-        response = yt_brand.remove_playlist_items(playlist_id, playlist["tracks"])
+        response = await yt_brand.remove_playlist_items(playlist_id, playlist["tracks"])
         assert response == ResponseStatus.SUCCEEDED, "Playlist item removal failed"
-        yt_brand.delete_playlist(playlist_id)
+        await yt_brand.delete_playlist(playlist_id)

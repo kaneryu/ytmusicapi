@@ -4,7 +4,7 @@ from ytmusicapi.type_alias import JsonDict, JsonList
 
 
 class ExploreMixin(MixinProtocol):
-    def get_mood_categories(self) -> JsonDict:
+    async def get_mood_categories(self) -> JsonDict:
         """
         Fetch "Moods & Genres" categories from YouTube Music.
 
@@ -50,7 +50,7 @@ class ExploreMixin(MixinProtocol):
 
         """
         sections: JsonDict = {}
-        response = self._send_request("browse", {"browseId": "FEmusic_moods_and_genres"})
+        response = await self._send_request("browse", {"browseId": "FEmusic_moods_and_genres"})
         for section in nav(response, SINGLE_COLUMN_TAB + SECTION_LIST):
             title = nav(section, [*GRID, "header", "gridHeaderRenderer", *TITLE_TEXT])
             sections[title] = []
@@ -61,7 +61,7 @@ class ExploreMixin(MixinProtocol):
 
         return sections
 
-    def get_mood_playlists(self, params: str) -> JsonList:
+    async def get_mood_playlists(self, params: str) -> JsonList:
         """
         Retrieve a list of playlists for a given "Moods & Genres" category.
 
@@ -70,7 +70,7 @@ class ExploreMixin(MixinProtocol):
 
         """
         playlists = []
-        response = self._send_request(
+        response = await self._send_request(
             "browse", {"browseId": "FEmusic_moods_and_genres_category", "params": params}
         )
         for section in nav(response, SINGLE_COLUMN_TAB + SECTION_LIST):
@@ -87,7 +87,7 @@ class ExploreMixin(MixinProtocol):
 
         return playlists
 
-    def get_explore(self) -> JsonDict:
+    async def get_explore(self) -> JsonDict:
         """
         Get latest explore data from YouTube Music.
         The Top Songs chart is only returned when authenticated with a premium account.
@@ -217,7 +217,7 @@ class ExploreMixin(MixinProtocol):
         """
         body: JsonDict = {"browseId": "FEmusic_explore"}
 
-        response = self._send_request("browse", body)
+        response = await self._send_request("browse", body)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST)
 
         explore: JsonDict = {}

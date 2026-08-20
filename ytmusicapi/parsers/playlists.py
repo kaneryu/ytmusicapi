@@ -93,7 +93,7 @@ def parse_playlist_header_meta(header: JsonDict) -> JsonDict:
     return playlist_meta
 
 
-def parse_audio_playlist(
+async def parse_audio_playlist(
     response: JsonDict, limit: int | None, request_func: RequestFuncBodyType
 ) -> JsonDict:
     playlist: JsonDict = {
@@ -117,7 +117,9 @@ def parse_audio_playlist(
         playlist["tracks"] = parse_playlist_items(content_data["contents"])
 
         parse_func: ParseFuncType = lambda contents: parse_playlist_items(contents)
-        playlist["tracks"].extend(get_continuations_2025(content_data, limit, request_func, parse_func))
+        playlist["tracks"].extend(
+            await get_continuations_2025(content_data, limit, request_func, parse_func)
+        )
 
     playlist["trackCount"] = len(playlist["tracks"])
 

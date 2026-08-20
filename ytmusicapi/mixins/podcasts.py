@@ -12,7 +12,7 @@ from ._utils import *
 class PodcastsMixin(MixinProtocol):
     """Podcasts Mixin"""
 
-    def get_channel(self, channelId: str) -> JsonDict:
+    async def get_channel(self, channelId: str) -> JsonDict:
         """
         Get information about a podcast channel (episodes, podcasts). For episodes, a
         maximum of 10 episodes are returned, the full list of episodes can be retrieved
@@ -67,7 +67,7 @@ class PodcastsMixin(MixinProtocol):
         """
         body = {"browseId": channelId}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         channel = {
             "title": nav(response, [*HEADER_MUSIC_VISUAL, *TITLE_TEXT]),
@@ -79,7 +79,7 @@ class PodcastsMixin(MixinProtocol):
 
         return channel
 
-    def get_channel_episodes(self, channelId: str, params: str) -> JsonList:
+    async def get_channel_episodes(self, channelId: str, params: str) -> JsonList:
         """
         Get all channel episodes. This endpoint is currently unlimited
 
@@ -90,11 +90,11 @@ class PodcastsMixin(MixinProtocol):
         """
         body = {"browseId": channelId, "params": params}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         results = nav(response, SINGLE_COLUMN_TAB + SECTION_LIST_ITEM + GRID_ITEMS)
         return parse_content_list(results, parse_episode, MMRIR)
 
-    def get_podcast(self, playlistId: str, limit: int | None = 100) -> JsonDict:
+    async def get_podcast(self, playlistId: str, limit: int | None = 100) -> JsonDict:
         """
         Returns podcast metadata and episodes
 
@@ -136,7 +136,7 @@ class PodcastsMixin(MixinProtocol):
         browseId = "MPSP" + playlistId if not playlistId.startswith("MPSP") else playlistId
         body = {"browseId": browseId}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         two_columns = nav(response, TWO_COLUMN_RENDERER)
         header = nav(two_columns, [*TAB_CONTENT, *SECTION_LIST_ITEM, *RESPONSIVE_HEADER])
         podcast: JsonDict = parse_podcast_header(header)
@@ -151,7 +151,7 @@ class PodcastsMixin(MixinProtocol):
             )
             remaining_limit = None if limit is None else (limit - len(episodes))
             episodes.extend(
-                get_continuations(
+                await get_continuations(
                     results, "musicShelfContinuation", remaining_limit, request_func, parse_func
                 )
             )
@@ -160,7 +160,7 @@ class PodcastsMixin(MixinProtocol):
 
         return podcast
 
-    def get_episode(self, videoId: str) -> JsonDict:
+    async def get_episode(self, videoId: str) -> JsonDict:
         """
         Retrieve episode data for a single episode
 
@@ -218,7 +218,7 @@ class PodcastsMixin(MixinProtocol):
         browseId = "MPED" + videoId if not videoId.startswith("MPED") else videoId
         body = {"browseId": browseId}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
 
         two_columns = nav(response, TWO_COLUMN_RENDERER)
         header = nav(two_columns, [*TAB_CONTENT, *SECTION_LIST_ITEM, *RESPONSIVE_HEADER])
@@ -235,7 +235,7 @@ class PodcastsMixin(MixinProtocol):
 
         return episode
 
-    def get_episodes_playlist(self, playlist_id: str = "RDPN") -> JsonDict:
+    async def get_episodes_playlist(self, playlist_id: str = "RDPN") -> JsonDict:
         """
         Get all episodes in an episodes playlist. Currently the only known playlist is the
         "New Episodes" auto-generated playlist
@@ -246,7 +246,7 @@ class PodcastsMixin(MixinProtocol):
         browseId = "VL" + playlist_id if not playlist_id.startswith("VL") else playlist_id
         body = {"browseId": browseId}
         endpoint = "browse"
-        response = self._send_request(endpoint, body)
+        response = await self._send_request(endpoint, body)
         playlist = parse_playlist_header(response)
 
         results = nav(response, [*TWO_COLUMN_RENDERER, "secondaryContents", *SECTION_LIST_ITEM, *MUSIC_SHELF])

@@ -4,10 +4,8 @@ import webbrowser
 from collections.abc import KeysView
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from requests.structures import CaseInsensitiveDict
-
+from ytmusicapi._headers import CaseInsensitiveDict
 from ytmusicapi.auth.oauth.credentials import Credentials, OAuthCredentials
 from ytmusicapi.auth.oauth.models import BaseTokenDict, Bearer, DefaultScope, RefreshableTokenDict
 
@@ -46,6 +44,12 @@ class Token:
     @property
     def is_expiring(self) -> bool:
         return self.expires_in < 60
+
+    async def refresh_if_expiring(self) -> None:
+        """Refresh the access token if it is about to expire.
+
+        No-op for static tokens; :class:`RefreshingToken` overrides this.
+        """
 
 
 class OAuthToken(Token):
@@ -90,14 +94,17 @@ class RefreshingToken(OAuthToken):
     #: protected/property attribute enables auto writing token values to new file location via setter
     _local_cache: Path | None = None
 
-    def __getattribute__(self, item: str) -> Any:
-        """access token setter to auto-refresh if it is expiring"""
-        if item == "access_token" and self.is_expiring:
-            fresh = self.credentials.refresh_token(self.refresh_token)
+    async def refresh_if_expiring(self) -> None:
+        """Refresh ``access_token`` if it is expiring.
+
+        Upstream refreshes lazily from ``__getattribute__`` on ``access_token`` access, which
+        cannot await. Refreshing is therefore explicit here; ``YTMusic`` awaits this before
+        every request, so the token is still transparently kept fresh for callers.
+        """
+        if self.is_expiring:
+            fresh = await self.credentials.refresh_token(self.refresh_token)
             self.update(fresh)
             self.store_token()
-
-        return super().__getattribute__(item)
 
     @property
     def local_cache(self) -> Path | None:
@@ -110,7 +117,7 @@ class RefreshingToken(OAuthToken):
         self.store_token()
 
     @classmethod
-    def prompt_for_token(
+    async def prompt_for_token(
         cls, credentials: OAuthCredentials, open_browser: bool = False, to_file: str | None = None
     ) -> "RefreshingToken":
         """
@@ -121,12 +128,12 @@ class RefreshingToken(OAuthToken):
         :param to_file: Optional. Path to store/sync json version of resulting token. (Default: ``None``).
         """
 
-        code = credentials.get_code()
+        code = await credentials.get_code()
         url = f"{code['verification_url']}?user_code={code['user_code']}"
         if open_browser:
             webbrowser.open(url)
         input(f"Go to {url} , finish the login flow and press Enter when done, Ctrl-C to abort")
-        raw_token = credentials.token_from_code(code["device_code"])
+        raw_token = await credentials.token_from_code(code["device_code"])
         refresh_token_expires_in = raw_token.get("refresh_token_expires_in", raw_token["expires_in"])
         ref_token = cls(
             credentials=credentials,
