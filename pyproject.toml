@@ -25,6 +25,10 @@ build-backend = "setuptools.build_meta"
 readme = { file = ["README.rst"] }
 
 [tool.setuptools_scm]
+# GitHub /archive/*.zip tarballs carry no .git directory, so setuptools-scm cannot
+# derive a version and hard-fails. Building from a real checkout still uses git;
+# this only applies when that metadata is absent.
+fallback_version = "1.12.3+async"
 
 [tool.setuptools]
 include-package-data = false
